@@ -1,7 +1,7 @@
 # curl
 
 ```
-bash <(curl -Ss https://gitlab.com/mkolakowski/curl/-/raw/master/curl.sh) $optional_flag
+bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) $optional_flag
 ```
 Can also add commands at the end such as
 
@@ -10,3 +10,10 @@ Can also add commands at the end such as
 | ------ | ------ |
 | update | updates OS |
 | restart | restarts OS |
+
+Examples
+```
+bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) update
+or
+bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) restart
+```
