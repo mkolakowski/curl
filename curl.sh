@@ -73,10 +73,6 @@ ColorBlue(){
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        
-
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 #First checks if Open JDK 8 is installed then will install if past test
 function function_Ubuntu_Install () {
@@ -102,7 +98,16 @@ function function_Ubuntu_Install () {
         else        
                 echo "$UbuntuAppName Already Installed"
         fi
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
+
+# Installs Netdata using vendor provided scripts
+function function_Install_Netdata () {
+        bash <(curl -Ss https://my-netdata.io/kickstart.sh)
+}
+
+function function_Install_Geekbench5 () {
+    curl -s  https://gitlab.com/mkolakowski/bench/raw/master/geekbench-5.sh | sudo bash
+} 
 
 # Adds the two 
 function function_Tailscale_Install () {
@@ -111,26 +116,27 @@ function function_Tailscale_Install () {
 
         function_Ubuntu_Install "tailscale"
 
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #First checks if Open JDK 8 is installed then will install if past test
 function function_OpenJDK_8_Headless_Install () {
-        
         function_Ubuntu_Install "openjdk-8-jre-headless"
-        
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
+
+#Installs Fail2Ban then shows its status
+function function_Install_Fail2Ban () {
+        function_Ubuntu_Install "fail2ban"
+        sudo systemctl status fail2ban
+        sudo cp /etc/fail2ban/jail.{conf,local}   
+} 
 
 #Installs Repo Keys then installs application
 function function_Install_PlexMediaServer () {
-
-
     sudo echo deb https://downloads.plex.tv/repo/deb public main | sudo tee /etc/apt/sources.list.d/plexmediaserver.list
     sudo curl https://downloads.plex.tv/plex-keys/PlexSign.key | sudo apt-key add -
     
     function_Ubuntu_Install "plexmediaserver"
-
-} #End --------------------------------------------------------------------------------------------------------------------
-
+} 
 
 #First checks if Open JDK 8 is installed then will Remove if past test
 function function_OpenJDK_8_Headless_Uninstall () {
@@ -148,7 +154,7 @@ function function_OpenJDK_8_Headless_Uninstall () {
                 echo "-----------------------"
                 echo "OpenJDK 8 Not Installed"
         fi
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -161,7 +167,7 @@ function function_Bitwarden_Load_Config () {
         BitwardenLocalBackupLocation=$confBitwardenBackupLocal
         BitwardenRemoteBackupLocation=$confBitwardenRemoteBackupLocation
         BitwardenServerLocation=$confBitwardenServerLocation
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Creates Config file for the Java edition of Minecraft
 function function_Bitwarden_Create_Config () {
@@ -175,7 +181,7 @@ function function_Bitwarden_Create_Config () {
         confBitwardenBackupLocal=$BitwardenLocalBackupLocation
 
         " >> $BitwardenConfigPath
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Will exit function if config exists, does not overwrite file
 function function_Bitwarden_Build_Config() {
@@ -192,7 +198,7 @@ function function_Bitwarden_Build_Config() {
                 else
                         echo ""
                 fi
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Will exit function if config exists, WILL overwrite file USE WITH CAUTION
 function function_Bitwarden_Rebuild_Config() {
@@ -209,8 +215,7 @@ function function_Bitwarden_Rebuild_Config() {
 
         function_Bitwarden_Create_Config
 
-} #End --------------------------------------------------------------------------------------------------------------------
-
+} 
 
 function function_Bitwarden_Backup () {
 
@@ -231,7 +236,7 @@ function function_Bitwarden_Backup () {
         #echo ---------------------------------------------------------------------------
                 #echo Checking File System to see that backup zip was deleted
                 #ls -l
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -247,7 +252,7 @@ function function_Minecraft_Java_Load_Config () {
         JavaMinecraftMemoryMin=$confJavaMinecraftMemoryMin
         JavaMinecraftMemoryMax=$confJavaMinecraftMemoryMax
         JavaMinecraftServerVersion=$confJavaMinecraftServerVersion
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 function function_Minecraft_Java_Backup_Config () {
 
@@ -256,7 +261,7 @@ function function_Minecraft_Java_Backup_Config () {
         echo " "
         echo "Backup Config located at: $JavaMinecraftServerLocation/bakupConfig/configbackup-$starttime.OLD"
         echo " "
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Creates Config file for the Java edition of Minecraft
 function function_Minecraft_Java_Create_Config () {
@@ -279,7 +284,7 @@ function function_Minecraft_Java_Create_Config () {
                 confJavaMinecraftServerVersion=$JavaMinecraftServerVersion
 
         " >> $JavaMinecraftConfigPath
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Starts up the Minecraft Server
 function function_Minecraft_Java_Start_Server () {
@@ -292,7 +297,7 @@ function function_Minecraft_Java_Start_Server () {
 
         echo "_____________________________________________"
         echo "Please give the server 30-60 seconds to start"
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Opens Nano to edit EULA
 function function_Minecraft_Connect () {
@@ -300,7 +305,7 @@ function function_Minecraft_Connect () {
         function_Minecraft_Java_Load_Config
 
         screen -r $JavaMinecraftScreenSession
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Stops the Minecraft Server
 function function_Minecraft_Java_Stop_Server () {
@@ -311,7 +316,7 @@ function function_Minecraft_Java_Stop_Server () {
         screen -r $JavaMinecraftScreenSession -X stuff 'say Stoping server now\n'
         screen -r $JavaMinecraftScreenSession -X stuff 'stop\n'
         screen -r $JavaMinecraftScreenSession
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Restarts the Java Minecraft Server
 function function_Minecraft_Java_Restart_Server () {
@@ -319,7 +324,7 @@ function function_Minecraft_Java_Restart_Server () {
         #Calls Stop then start functions
         function_Minecraft_Java_Stop_Server
         function_Minecraft_Java_Start_Server
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Opens Nano to edit EULA
 function function_Minecraft_Java_Edit_EULA () {
@@ -327,7 +332,7 @@ function function_Minecraft_Java_Edit_EULA () {
         function_Minecraft_Java_Load_Config
 
         nano $JavaMinecraftServerLocation/eula.txt
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Opens Nano to edit EULA
 function function_Minecraft_Java_Edit_Properties () {
@@ -335,7 +340,7 @@ function function_Minecraft_Java_Edit_Properties () {
         function_Minecraft_Java_Load_Config
 
         nano $JavaMinecraftServerLocation/server.properties
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Builds the Java Minecraft run configs
 # Will exit function if config exists, does not overwrite file
@@ -353,7 +358,7 @@ function function_Minecraft_Java_Build_Config() {
                 else
                         echo ""
                 fi
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Builds the Java Minecraft run configs
 # Will exit function if config exists, WILL overwrite file USE WITH CAUTION
@@ -371,7 +376,7 @@ function function_Minecraft_Java_Rebuild_Config() {
 
         function_Minecraft_Java_Create_Config
 
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Prints the Minecraft Java Config file to terminal
 function function_Minecraft_Java_Print_Config() {
@@ -400,7 +405,7 @@ function function_Minecraft_Java_Print_Config() {
         echo " "
         echo "Version of Server.jar"
         echo "$JavaMinecraftServerVersion"
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Edits the Java Minecraft Config
 function function_Minecraft_Java_Edit_Config () {
@@ -417,7 +422,7 @@ function function_Minecraft_Java_Edit_Config () {
 
         #Prints Changed Config
         function_Minecraft_Java_Print_Config
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Prints the Location of the Remote backup location
 function function_Minecraft_Set_Remote_Backup() {
@@ -425,7 +430,7 @@ function function_Minecraft_Set_Remote_Backup() {
         function_Minecraft_Java_Load_Config
 
         echo "$JavaMinecraftRemoteBackupLocation"
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Asks for JAR URL Installs Headless Java and installes Minecraft
 function function_Minecraft_Java_Download_Server () {
@@ -461,7 +466,7 @@ function function_Minecraft_Java_Download_Server () {
         function_Minecraft_Java_Backup_Config
         function_Minecraft_Java_Rebuild_Config
 
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Asks for JAR URL Installs Headless Java and installes Minecraft
 function function_Minecraft_Java_Update_Server () {
@@ -478,7 +483,7 @@ function function_Minecraft_Java_Update_Server () {
                 fi
         function_Minecraft_Java_Download_Server
 
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Asks for JAR URL Installs Headless Java and installes Minecraft
 function function_Minecraft_Java_Install_Server () {
@@ -495,7 +500,7 @@ function function_Minecraft_Java_Install_Server () {
                 else
                         echo "-------------------------------------------"
                 fi
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 function function_Minecraft_Java_Backup () {
 
@@ -559,15 +564,7 @@ function function_Minecraft_Java_Backup () {
         echo "Job Started:  $starttime"
         echo "Job Ended:    $(date +%Y%m%d-%H%M%S)"
         echo " "
-} #End --------------------------------------------------------------------------------------------------------------------
-
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-# Installs Netdata using vendor provided scripts
-function function_Install_Netdata () {
-        #Install - Netdata
-        bash <(curl -Ss https://my-netdata.io/kickstart.sh)
-}
+} 
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -577,20 +574,20 @@ function function_Install_Netdata () {
 function function_Unifi_Restart_UDM_Controller () {
     #Unifi - Restart UDM Network Controller
     podman restart unifi-os
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Restarts UDM or UDM Pro device (Hardware)
 function function_Unifi_Restart_UDM () {
     #Unifi - Halt OS
     podman stop unifi-os echo 1 > /proc/sys/kernel/sysrq echo s > /proc/sysrq-trigger echo o > /proc/sysrq-trigger
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Run with Caution!!!!   Upgrades the Network Controller firmware on a UDM
 function function_Unifi_Upgrade_UDM_Firmware () {
     #Unifi - Upgrade UDM Firmware
     unifi-os shell
     rm unifi_sysvinit_all.deb &> /dev/null; curl -o "/tmp/unifi_sysvinit_all.deb" https://dl.ui.com/unifi/6.0.23-20b313f50d/unifi_sysvinit_all.deb && dpkg -i /tmp/unifi_sysvinit_all.deb && rm /tmp/unifi_sysvinit_all.deb
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # To be ran on switches and AP's that support Switches
 # Sets devices inform url to UDM IP
@@ -603,21 +600,14 @@ function function_Unifi_Set_Inform_URL () {
         #Sets Inform URL from VAR
         set-inform http://$UnifiInformURL:8080/inform
         set-inform http://$UnifiInformURL:8080/inform
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #Installs Rclone on UDM or UDM Pro
 function function_Unifi_Install_Rclone_Unifi () {
         unifi-os shell
         curl https://rclone.org/install.sh | sudo bash 
         rclone config
-} #End --------------------------------------------------------------------------------------------------------------------
-
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-function function_Install_Geekbench5 () {
-    #Install - Geekbench 5
-    curl -s  https://gitlab.com/mkolakowski/bench/raw/master/geekbench-5.sh | sudo bash
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -625,20 +615,20 @@ function function_Plex_Start_Server () {
         echo "Starting Plex Server"
         echo "--------------------"
         service plexmediaserver start
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 function function_Plex_Restart_Server () {
         echo "Restarting Plex Server"
         echo "----------------------"
         service plexmediaserver stop
         service plexmediaserver restart
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 function function_Plex_Stop_Server () {
         echo "Starting Plex Server"
         echo "--------------------"
         service plexmediaserver stop
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -647,21 +637,21 @@ function function_Install_Pi_Hole () {
     sudo apt update
     wget -O basic-install.sh https://install.pi-hole.net
     sudo bash basic-install.sh
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 function function_Update_Pi_Hole () {
     #Install - Plex Media Server
     sudo apt update
     wget -O basic-install.sh https://install.pi-hole.net
     sudo bash basic-install.sh
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 function function_System_List_MOTD () {
     #Install - Plex Media Server
     ls -l /etc/update-motd.d/
-} #End --------------------------------------------------------------------------------------------------------------------
+} 
 
 # Increases the size of the swapfile to 4Gb
 function function_System_Change_Timezone () {
@@ -829,7 +819,7 @@ $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_Update_OS ; menu_Netdata ;;
-	        2) function_Install_Geekbench5 ; menu_Netdata ;;
+	        2) function_Install_Netdata ; menu_Netdata ;;
 	        3) service netdata start ; menu_Netdata ;;
 	        4) service netdata stop ; menu_Netdata ;;
 	        5) service netdata restart ; menu_Netdata ;;
@@ -854,20 +844,18 @@ $(ColorGreen '1)') Update PiHole
 $(ColorGreen '2)') Install PiHole
 $(ColorGreen '3)') Restart DNS Server
 $(ColorGreen '4)') Backup Pi-Hole Here
-$(ColorGreen '5)') NA
-$(ColorGreen '6)') Back to Main Menu
+$(ColorGreen '5)') Back to Main Menu
 $(ColorGreen '0)') Exit
 $(ColorBlue 'Choose an option:') "
         read a
         case $a in
-	        1) pihole -up ; menu_unifi ;;
-	        2) function_Install_Pi_Hole ; menu_unifi ;;
-	        3) pihole restartdns ; menu_unifi ;;
-	        4) pihole -a -t ; menu_unifi ;;
-	        5) menu_unifi ;;
-                6) ;;
+	        1) pihole -up ; menu_PiHole ;;
+	        2) function_Install_Pi_Hole ; menu_PiHole ;;
+	        3) pihole restartdns ; menu_PiHole ;;
+	        4) pihole -a -t ; menu_PiHole ;;
+                5) ;;
 		0) exit 0 ;;
-		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_main;;
+		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_PiHole;;
         esac
 }
 
@@ -983,6 +971,28 @@ $(ColorBlue 'Choose an option:') "
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+menu_Installers(){
+echo -ne "
+---------------------------------
+Script Menu
+---------------------------------
+$(ColorGreen '1)') Install Fail2ban
+$(ColorGreen '2)') Install Java
+$(ColorGreen '3)') Install 
+$(ColorGreen '0)') Exit
+$(ColorBlue 'Choose an option:') "
+        read a
+        case $a in
+	        1) function_Install_Fail2Ban ; menu_Installers ;;
+	        2) ;; menu_Installers ;;
+	        3) ;;
+		0) exit 0 ;;
+		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_Installers;;
+        esac
+}
+
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 menu_main(){
 echo -ne "
 $(ColorGreen '1)') Update OS
@@ -1006,7 +1016,7 @@ $(ColorBlue 'Choose an option:') "
 	        6) menu_plex ; menu_main ;;
 	        7) menu_unifi ; menu_main ;;
 	        8) menu_System ; menu_main ;;
-                9) menu_script; menu_main ;;
+                9) menu_Installers; menu_main ;;
 		0) exit 0 ;;
 		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_main;;
         esac
