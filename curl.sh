@@ -102,7 +102,7 @@ function function_Tailscale_Install () {
         curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.gpg | sudo apt-key add -
         curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.list | sudo tee /etc/apt/sources.list.d/tailscale.list
 
-        function_Ubuntu_Install "Tailscale"
+        function_Ubuntu_Install "tailscale"
 
 } #End --------------------------------------------------------------------------------------------------------------------
 
