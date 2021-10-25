@@ -912,7 +912,7 @@ $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_System_List_MOTD ; menu_System ;;
-	        2) wget $MotdURL -P /etc/update-motd.d/ ; menu_System ;;
+	        2) wget $MotdURL -P /etc/update-motd.d/01-custom-motd ; menu_System ;;
 	        3) function_OpenJDK_8_Headless_Uninstall ; menu_System ;;
 	        4) function_Increase_Swap_File ; menu_System ;;
 	        5) function_System_Change_Timezone ; menu_System ;;
