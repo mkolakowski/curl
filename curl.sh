@@ -66,8 +66,7 @@ ColorBlue(){
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.gpg | sudo apt-key add -
-        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.list | sudo tee /etc/apt/sources.list.d/tailscale.list
+
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -94,9 +93,19 @@ function function_Ubuntu_Install () {
                         echo "-----------------------------"
                 fi
         else        
-                echo "Talescale Already Installed"
+                echo "$UbuntuAppName Already Installed"
         fi
 } #End --------------------------------------------------------------------------------------------------------------------
+
+#First checks if Open JDK 8 is installed then will install if past test
+function function_Tailscale_Install () {
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.gpg | sudo apt-key add -
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.list | sudo tee /etc/apt/sources.list.d/tailscale.list
+
+        function_Ubuntu_Install "Tailscale"
+
+} #End --------------------------------------------------------------------------------------------------------------------
+
 
 #First checks if Open JDK 8 is installed then will install if past test
 function function_OpenJDK_8_Headless_Install () {
@@ -907,7 +916,7 @@ $(ColorGreen '3)') Uninstall OpenJDK 8 Headless
 $(ColorGreen '4)') Change Swap File Size to 2GB
 $(ColorGreen '5)') Change Timezone
 $(ColorGreen '6)') Install rclone
-$(ColorGreen '7)') NA
+$(ColorGreen '7)') function_Tailscale_Install
 $(ColorGreen '8)') NA
 $(ColorGreen '0)') Exit
 $(ColorBlue 'Choose an option:') "
@@ -919,7 +928,7 @@ $(ColorBlue 'Choose an option:') "
 	        4) function_Increase_Swap_File ; menu_System ;;
 	        5) function_System_Change_Timezone ; menu_System ;;
                 6) curl https://rclone.org/install.sh | sudo bash ; menu_System ;;
-                7) function_Ubuntu_Install "$1" ; menu_System ;;
+                7) function_Tailscale_Install ; menu_System ;;
                 7) ;;
 		0) exit 0 ;;
 		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_System;;
