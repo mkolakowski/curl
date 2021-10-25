@@ -106,27 +106,24 @@ function function_Tailscale_Install () {
 
 } #End --------------------------------------------------------------------------------------------------------------------
 
-
 #First checks if Open JDK 8 is installed then will install if past test
 function function_OpenJDK_8_Headless_Install () {
-        #checking if JAVA is installed
-        javainstallstatus=$(dpkg-query -W --showformat='${Status}\n' openjdk-8-jre-headless 2>/dev/null)
-        if [[ "${javainstallstatus}" != "install ok installed" ]]; 
-        then
-                echo "-----------------------------"
-                echo "Installing OpenJDK 8 Headless"
-                #Installing Java
-                if apt-get -qq install -y openjdk-8-jre-headless >/dev/null; 
-                then
-                        sudo apt update
-                        echo "Install has now Completed"
-                        dpkg-query -W --showformat='${Version}\n' openjdk-8-jre-headless
-                        echo "-----------------------------"
-                fi
-        else        
-                echo "OpenJDK 8 Already Installed"
-        fi
+        
+        function_Ubuntu_Install "openjdk-8-jre-headless"
+        
 } #End --------------------------------------------------------------------------------------------------------------------
+
+#Installs Repo Keys then installs application
+function function_Install_PlexMediaServer () {
+
+
+    sudo echo deb https://downloads.plex.tv/repo/deb public main | sudo tee /etc/apt/sources.list.d/plexmediaserver.list
+    sudo curl https://downloads.plex.tv/plex-keys/PlexSign.key | sudo apt-key add -
+    
+    function_Ubuntu_Install "plexmediaserver"
+
+} #End --------------------------------------------------------------------------------------------------------------------
+
 
 #First checks if Open JDK 8 is installed then will Remove if past test
 function function_OpenJDK_8_Headless_Uninstall () {
@@ -616,14 +613,6 @@ function function_Install_Geekbench5 () {
 } #End --------------------------------------------------------------------------------------------------------------------
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-function function_Install_PlexMediaServer () {
-    #Install - Plex Media Server
-    sudo echo deb https://downloads.plex.tv/repo/deb public main | sudo tee /etc/apt/sources.list.d/plexmediaserver.list
-    sudo curl https://downloads.plex.tv/plex-keys/PlexSign.key | sudo apt-key add -
-    sudo apt update
-    sudo apt install plexmediaserver
-} #End --------------------------------------------------------------------------------------------------------------------
 
 function function_Plex_Start_Server () {
         echo "Starting Plex Server"
