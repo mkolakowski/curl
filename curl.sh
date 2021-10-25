@@ -38,10 +38,16 @@ ColorBlue(){
         } #End
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        
+        
+        MotdURL="https://raw.githubusercontent.com/mkolakowski/curl/main/01-custom-motd" #Motd Github URL
+        
+        #JAVA Server URLS
         JavaMinecraftServer_1_15_2="https://launcher.mojang.com/v1/objects/bb2b6b1aefcd70dfd1892149ac3a215f6c636b07/server.jar"
         JavaMinecraftServer_1_16_0="https://launcher.mojang.com/v1/objects/7361a24df069a06748844cc7483c35d4abd2d80c/server.jar"
         JavaMinecraftServer_1_16_2="https://launcher.mojang.com/v1/objects/c5f6fb23c3876461d46ec380421e42b289789530/server.jar"
         JavaMinecraftServer_1_16_5="https://launcher.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar"
+        
         #Java Minecraft Defaults
         JavaMinecraftServerLocation="/media/minecraft-java/server"
         JavaMinecraftConfigPath="$JavaMinecraftServerLocation/minecraft.config"
@@ -53,6 +59,7 @@ ColorBlue(){
         JavaMinecraftJarURL=""
         JavaMinecraftServerURL=""
         JavaMinecraftServerVersion=""
+        
         #Bitwarden Backup Variables
         BitwardenConfigPath="/media/bitwarden-backup/bitwarden.config"
         BitwardenServerLocation="./bwdata"
@@ -66,7 +73,7 @@ ColorBlue(){
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        MotdURL="https://raw.githubusercontent.com/mkolakowski/curl/main/01-custom-motd.sh"
+        
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -912,7 +919,7 @@ $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_System_List_MOTD ; menu_System ;;
-	        2) wget $MotdURL -P /etc/update-motd.d/01-custom-motd ; menu_System ;;
+	        2) wget $MotdURL -P /etc/update-motd.d ; menu_System ;;
 	        3) function_OpenJDK_8_Headless_Uninstall ; menu_System ;;
 	        4) function_Increase_Swap_File ; menu_System ;;
 	        5) function_System_Change_Timezone ; menu_System ;;
