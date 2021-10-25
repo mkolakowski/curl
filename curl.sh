@@ -916,7 +916,7 @@ $(ColorGreen '3)') Uninstall OpenJDK 8 Headless
 $(ColorGreen '4)') Change Swap File Size to 2GB
 $(ColorGreen '5)') Change Timezone
 $(ColorGreen '6)') Install rclone
-$(ColorGreen '7)') function_Tailscale_Install
+$(ColorGreen '7)') Install Tailscale
 $(ColorGreen '8)') NA
 $(ColorGreen '0)') Exit
 $(ColorBlue 'Choose an option:') "
