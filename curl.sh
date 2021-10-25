@@ -97,7 +97,7 @@ function function_Ubuntu_Install () {
         fi
 } #End --------------------------------------------------------------------------------------------------------------------
 
-#First checks if Open JDK 8 is installed then will install if past test
+# Adds the two 
 function function_Tailscale_Install () {
         curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.gpg | sudo apt-key add -
         curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.list | sudo tee /etc/apt/sources.list.d/tailscale.list
