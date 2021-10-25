@@ -66,7 +66,7 @@ ColorBlue(){
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
+        MotdURL="https://raw.githubusercontent.com/mkolakowski/curl/main/01-custom-motd.sh"
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -900,7 +900,7 @@ echo -ne "
 System Menu
 ---------------------------------
 $(ColorGreen '1)') Show MOTD Files
-$(ColorGreen '2)') Install OpenJDK 8 Headless
+$(ColorGreen '2)') Install Custom MOTD
 $(ColorGreen '3)') Uninstall OpenJDK 8 Headless
 $(ColorGreen '4)') Change Swap File Size to 2GB
 $(ColorGreen '5)') Change Timezone
@@ -912,7 +912,7 @@ $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_System_List_MOTD ; menu_System ;;
-	        2) function_OpenJDK_8_Headless_Install ; menu_System ;;
+	        2) wget $MotdURL -P /etc/update-motd.d/ ; menu_System ;;
 	        3) function_OpenJDK_8_Headless_Uninstall ; menu_System ;;
 	        4) function_Increase_Swap_File ; menu_System ;;
 	        5) function_System_Change_Timezone ; menu_System ;;
