@@ -119,7 +119,7 @@ function function_Tailscale_Install () {
 } 
 
 #First checks if Open JDK 8 is installed then will install if past test
-function function_OpenJDK_8_Headless_Install () {
+function function_install_OpenJDK () {
         function_Ubuntu_Install "openjdk-8-jre-headless"
 } 
 
@@ -491,7 +491,7 @@ function function_Minecraft_Java_Install_Server () {
         function_Minecraft_Java_Load_Config
 
         # Call Java Installer
-        function_OpenJDK_8_Headless_Install
+        function_install_OpenJDK
 
         #checking if Minecraft Server is installed by checking if server.jar is in the right place
         if [[ ! -f  $JavaMinecraftServerLocation/server.jar ]]; 
@@ -962,7 +962,7 @@ $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_Install_Fail2Ban ; menu_Installers ;;
-	        2) ;; menu_Installers ;;
+	        2) function_install_OpenJDK ;; menu_Installers ;;
 	        3) ;;
 		0) exit 0 ;;
 		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_Installers;;
