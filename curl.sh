@@ -973,17 +973,17 @@ $(ColorBlue 'Choose an option:') "
 
 menu_main(){
 echo -ne "
-$(ColorGreen  '1)') Update OS
-$(ColorGreen  '2)') System Utilities
-$(ColorGreen  '3)') Installers
-$(ColorGreen  '4)') Bitwarden 
-$(ColorGreen  '5)') Minecraft Bedrock Edition
-$(ColorGreen  '6)') Minecraft Java Edition
-$(ColorGreen  '7)') Netdata
-$(ColorGreen  '8)') PiHole
-$(ColorGreen  '9)') Plex
+$(ColorGreen ' 1)') Update OS
+$(ColorGreen ' 2)') System Utilities
+$(ColorGreen ' 3)') Installers
+$(ColorGreen ' 4)') Bitwarden 
+$(ColorGreen ' 5)') Minecraft Bedrock Edition
+$(ColorGreen ' 6)') Minecraft Java Edition
+$(ColorGreen ' 7)') Netdata
+$(ColorGreen ' 8)') PiHole
+$(ColorGreen ' 9)') Plex
 $(ColorGreen '10)') Plex
-$(ColorGreen  '0)') Exit
+$(ColorGreen ' 0)') Exit
 $(ColorBlue 'Choose an option:') "
         read a
         case $a in
