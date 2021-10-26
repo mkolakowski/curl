@@ -962,7 +962,7 @@ $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_Install_Fail2Ban ; menu_Installers ;;
-	        2) function_install_OpenJDK ;; menu_Installers ;;
+	        2) function_install_OpenJDK ; menu_Installers ;;
 	        3) ;;
 		0) exit 0 ;;
 		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_Installers;;
