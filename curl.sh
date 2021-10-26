@@ -949,28 +949,6 @@ $(ColorBlue 'Choose an option:') "
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-menu_script(){
-echo -ne "
----------------------------------
-Script Menu
----------------------------------
-$(ColorGreen '1)') Cache Script
-$(ColorGreen '2)') Update Script
-$(ColorGreen '3)') Back to Main Menu
-$(ColorGreen '0)') Exit
-$(ColorBlue 'Choose an option:') "
-        read a
-        case $a in
-	        1) wget "https://gitlab.com/mkolakowski/curl/-/raw/master/curl.sh"; chmod u+x curl.sh; menu_script ;;
-	        2) rm /root/curl.sh; wget "https://gitlab.com/mkolakowski/curl/-/raw/master/curl.sh"; chmod u+x curl.sh; menu_script ;;
-	        3) ;;
-		0) exit 0 ;;
-		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_script;;
-        esac
-}
-
-#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 menu_Installers(){
 echo -ne "
 ---------------------------------
@@ -995,28 +973,30 @@ $(ColorBlue 'Choose an option:') "
 
 menu_main(){
 echo -ne "
-$(ColorGreen '1)') Update OS
-$(ColorGreen '2)') Minecraft Bedrock Edition
-$(ColorGreen '3)') Minecraft Java Edition
-$(ColorGreen '4)') Netdata 
-$(ColorGreen '5)') PiHole
-$(ColorGreen '6)') Plex
-$(ColorGreen '7)') Unifi
-$(ColorGreen '8)') System Utilities
-$(ColorGreen '9)') Script
-$(ColorGreen '0)') Exit
+$(ColorGreen  '1)') Update OS
+$(ColorGreen  '2)') System Utilities
+$(ColorGreen  '3)') Installers
+$(ColorGreen  '4)') Bitwarden 
+$(ColorGreen  '5)') Minecraft Bedrock Edition
+$(ColorGreen  '6)') Minecraft Java Edition
+$(ColorGreen  '7)') Netdata
+$(ColorGreen  '8)') PiHole
+$(ColorGreen  '9)') Plex
+$(ColorGreen '10)') Plex
+$(ColorGreen  '0)') Exit
 $(ColorBlue 'Choose an option:') "
         read a
         case $a in
 	        1) function_Update_OS ; menu_main ;;
-	        2) menu_minecraft_bedrock ; menu_main ;;
-	        3) menu_minecraft_java ; menu_main ;;
-	        4) menu_Netdata ; menu_main ;;
-	        5) menu_PiHole ; menu_main ;;
-	        6) menu_plex ; menu_main ;;
-	        7) menu_unifi ; menu_main ;;
-	        8) menu_System ; menu_main ;;
-                9) menu_Installers; menu_main ;;
+	        2) menu_System ; menu_main ;;
+	        3) menu_Installers ; menu_main ;;
+	        4) menu_Bitwarden ; menu_main ;;
+	        5) menu_minecraft_bedrock ; menu_main ;;
+	        6) menu_minecraft_java ; menu_main ;;
+	        7) menu_Netdata ; menu_main ;;
+	        8) menu_PiHole ; menu_main ;;
+                9) menu_plex ; menu_main ;;
+               10) menu_unifi ; menu_main ;;
 		0) exit 0 ;;
 		*) echo -e $red"Wrong option!!! Choose Again."$clear; menu_main;;
         esac
