@@ -79,7 +79,7 @@ function function_Ubuntu_Install () {
 
         echo "checking if $1 is installed"
         UbuntuAppName=$1
-
+	sudo apt update
         Appinstallstatus=$(dpkg-query -W --showformat='${Status}\n' $UbuntuAppName 2>/dev/null)
         if [[ "${Appinstallstatus}" != "install ok installed" ]]; 
         then
@@ -90,7 +90,7 @@ function function_Ubuntu_Install () {
 
                 if apt-get -qq install -y $UbuntuAppName >/dev/null; 
                 then
-                        sudo apt update
+                        
                         echo "$UbuntuAppName Install has now Completed"
                         dpkg-query -W --showformat='${Version}\n' $UbuntuAppName
                         echo "-----------------------------"
