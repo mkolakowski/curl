@@ -87,10 +87,8 @@ function function_Ubuntu_Install () {
                 echo "Installing $UbuntuAppName"
                 #Installing app
 
-
                 if apt-get -qq install -y $UbuntuAppName >/dev/null; 
-                then
-                        
+                then    
                         echo "$UbuntuAppName Install has now Completed"
                         dpkg-query -W --showformat='${Version}\n' $UbuntuAppName
                         echo "-----------------------------"
@@ -112,6 +110,7 @@ function function_Install_Geekbench5 () {
 # Adds the two 
 function function_Tailscale_Install () {
         curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.gpg | sudo apt-key add -
+	
         curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/focal.list | sudo tee /etc/apt/sources.list.d/tailscale.list
 
         function_Ubuntu_Install "tailscale"
