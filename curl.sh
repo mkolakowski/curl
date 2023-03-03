@@ -461,7 +461,6 @@ function function_Minecraft_Java_Download_Server () {
                         1.16.2) wget $JavaMinecraftServer_1_16_2 ; JavaMinecraftServerVersion="1.16.2" ;;
                         1.16.5) wget $JavaMinecraftServer_1_16_5 ; JavaMinecraftServerVersion="1.16.5" ;;
 			1.19.3) wget $JavaMinecraftServer_1_19_3 ; JavaMinecraftServerVersion="1.19.3" ;;
-			
                         *) wget $a ; read -p "Enter the Version of minecraft downloaded" JavaMinecraftServerVersion;;
                 esac
         chmod u+x server.jar
