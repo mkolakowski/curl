@@ -1,7 +1,7 @@
 #!/bin/bash
 echo " "
 echo " "
-echo "2021-DEC_22-1450
+echo "2023-MAR_03-1102
 ---------------------------------
 ---------------------------------
 BETA
@@ -47,6 +47,7 @@ ColorBlue(){
         JavaMinecraftServer_1_16_0="https://launcher.mojang.com/v1/objects/7361a24df069a06748844cc7483c35d4abd2d80c/server.jar"
         JavaMinecraftServer_1_16_2="https://launcher.mojang.com/v1/objects/c5f6fb23c3876461d46ec380421e42b289789530/server.jar"
         JavaMinecraftServer_1_16_5="https://launcher.mojang.com/v1/objects/1b557e7b033b583cd9f66746b7a9ab1ec1673ced/server.jar"
+	JavaMinecraftServer_1_19_3="https://piston-data.mojang.com/v1/objects/c9df48efed58511cdd0213c56b9013a7b5c9ac1f/server.jar"
         
         #Java Minecraft Defaults
         JavaMinecraftServerLocation="/media/minecraft-java/server"
@@ -459,6 +460,8 @@ function function_Minecraft_Java_Download_Server () {
                         1.16.0) wget $JavaMinecraftServer_1_16_0 ; JavaMinecraftServerVersion="1.16.0" ;;
                         1.16.2) wget $JavaMinecraftServer_1_16_2 ; JavaMinecraftServerVersion="1.16.2" ;;
                         1.16.5) wget $JavaMinecraftServer_1_16_5 ; JavaMinecraftServerVersion="1.16.5" ;;
+			1.19.3) wget $JavaMinecraftServer_1_19_3 ; JavaMinecraftServerVersion="1.19.3" ;;
+			
                         *) wget $a ; read -p "Enter the Version of minecraft downloaded" JavaMinecraftServerVersion;;
                 esac
         chmod u+x server.jar
