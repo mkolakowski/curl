@@ -1037,6 +1037,6 @@ fi
 exit 0
 #- Chantes Log
 # 2021-DEC_22-1450 - Corrected issue with function_Ubuntu_Install that would prevent tailscale from installing, Moved apt update to before if/then logic
-#
+# 2023-MAR_03-1102 - Updated minecraft java server version list
 #
 #
