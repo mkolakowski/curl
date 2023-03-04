@@ -353,6 +353,7 @@ function function_Minecraft_Java_Build_Config() {
                 echo "Building Config"
                 #Prints Path then Creates folder path then builds config with default values
                 #echo $JavaMinecraftConfigPath
+		$JavaMinecraftServerLocation
                 sudo mkdir -p $JavaMinecraftServerLocation
                 function_Minecraft_Java_Create_Config
                 else
