@@ -51,22 +51,39 @@ ask() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # ---------------------------------------------------------- user / privilege --
-if [ "$(id -u)" -eq 0 ]; then SUDO=''; else SUDO='sudo'; fi
-
-TARGET_USER="${SUDO_USER:-$(id -un)}"
+# $SUDO_USER is only meaningful when we are actually root: it then names the
+# human who ran `sudo`. In a non-root shell it may be a leftover from some
+# earlier sudo in the ancestry, so it must not be trusted there.
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=''
+    TARGET_USER="${SUDO_USER:-root}"
+else
+    SUDO='sudo'
+    TARGET_USER="$(id -un)"
+fi
 
 as_user() {
     if [ "$(id -un)" = "$TARGET_USER" ]; then
         bash -lc "$*"
+    elif have sudo; then
+        # Note: NOT "$SUDO -u", which expands to a bare "-u ..." when we are
+        # already root and $SUDO is empty. Root needs no password for this.
+        sudo -u "$TARGET_USER" -H bash -lc "$*"
+    elif have runuser; then
+        runuser -l "$TARGET_USER" -c "$*"
     else
-        $SUDO -u "$TARGET_USER" -H bash -lc "$*"
+        su - "$TARGET_USER" -c "$*"
     fi
 }
 
 require_sudo() {
     [ -z "$SUDO" ] && return 0
     have sudo || die "sudo is not installed and we are not root."
-    $SUDO -v || die "sudo authentication failed."
+    # `sudo -v` prompts for a password even where NOPASSWD applies, which fails
+    # outright when there is no tty. Probe non-interactively first: if that
+    # succeeds we are either NOPASSWD or already authenticated.
+    sudo -n true 2>/dev/null && return 0
+    sudo -v || die "sudo authentication failed."
 }
 
 # ---------------------------------------------------------------- the catalog --
@@ -90,7 +107,7 @@ check_screen()    { have screen    && screen --version 2>/dev/null | awk '{print
 check_btop()      { have btop      && printf 'installed'; }
 check_docker()    { have docker    && docker --version 2>/dev/null | awk '{print $3}' | tr -d ','; }
 check_tailscale() { have tailscale && tailscale version 2>/dev/null | head -1; }
-check_claude()    { as_user 'command -v claude >/dev/null 2>&1' && as_user 'claude --version' 2>/dev/null | awk '{print $1}'; }
+check_claude()    { as_user 'command -v claude >/dev/null 2>&1' && as_user 'timeout 10 claude --version' 2>/dev/null | awk '{print $1}'; }
 
 pkg_index() {
     local want="$1" i

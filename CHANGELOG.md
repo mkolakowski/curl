@@ -5,10 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Every change opens a new version, so there is no `Unreleased` section — these
+scripts are always consumed from `main`, which means a change that lands is a
+change that has shipped. Each version also records the commit message that
+carried it.
+
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
-
-## [Unreleased]
 
 ## [2.0.0] - 2026-07-27
 
@@ -48,6 +51,24 @@ CHANGELOG.md in Keep a Changelog form, backfilled from git history; the
 version numbers there were assigned retroactively, as the repository
 carries no tags yet.
 
+Every change opens a new version rather than accumulating under an
+Unreleased heading: these scripts are always consumed from main, so a
+change that lands is a change that has shipped. Each version records the
+commit message that carried it, directly under its heading, since GitHub
+Desktop cannot read a commit template.
+
+Running as root with SUDO_USER set was broken: $SUDO is empty once you
+are root, so "$SUDO -u ..." left the shell trying to run -u as a command
+and Claude Code never installed. Fixing that exposed four more, all in
+the same seam between "who is running this" and "who is this for":
+screen sockets are per-user so root could not see the session it had
+just started; SUDO_USER was trusted even in a non-root shell, pointing
+at the wrong home; a root run left the boot log root-owned so the cron
+job could never append to it; and sudo -v prompts for a password even
+under NOPASSWD, failing with no tty. Session names are now matched
+literally rather than as a regex, since a name containing . or + could
+fail to match itself and start a duplicate session on every boot.
+
 Also drop archive/.probe, a stray empty file committed by accident.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
@@ -86,6 +107,28 @@ Claude-Session: https://claude.ai/code/session_01PN1YYcEXvDEpYVfLf1ugK5
   `claude.sh` recognises the old `managed by curl.sh` marker and replaces that
   entry instead of adding a second one. Unrelated crontab lines are untouched.
 - Catalog columns stay aligned when colour is enabled.
+- Running either script as root — via `sudo -i`, `sudo su` or similar, with
+  `SUDO_USER` set — no longer fails with `-u: command not found`. `$SUDO` is
+  empty when already root, so `$SUDO -u ...` left the shell trying to run `-u`
+  as a command. Claude Code silently failed to install as a result.
+- `claude.sh` now finds a session owned by another user. screen sockets live in
+  a per-user directory, so a session started for `$SUDO_USER` was invisible to
+  root: `start` reported that it had not come up, `status` said `no`, and the
+  Enter / Restart / Stop menu never appeared.
+- `SUDO_USER` is only trusted when actually running as root. In a non-root
+  shell a leftover value pointed the config, boot script and work directory at
+  the wrong user's home.
+- The boot log is created and handed to the target user before it is written,
+  rather than being left root-owned by a run made as root — which then blocked
+  every later run, including the `@reboot` cron job, from appending to it.
+- Sudo is probed with `sudo -n true` before falling back to `sudo -v`, which
+  prompts for a password even where `NOPASSWD` applies and fails outright with
+  no tty.
+- Session names are matched literally rather than as a regular expression. A
+  `SESSION_NAME` containing `.`, `+` or `*` could fail to match its own
+  session, which would start a duplicate on every boot.
+- A wedged `claude --version` can no longer hang provisioning; version probes
+  are wrapped in `timeout 10`.
 
 ### Removed
 

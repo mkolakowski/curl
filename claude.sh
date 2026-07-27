@@ -55,9 +55,16 @@ ask() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # ---------------------------------------------------------- user / privilege --
-if [ "$(id -u)" -eq 0 ]; then SUDO=''; else SUDO='sudo'; fi
-
-TARGET_USER="${SUDO_USER:-$(id -un)}"
+# $SUDO_USER is only meaningful when we are actually root: it then names the
+# human who ran `sudo`. In a non-root shell it may be a leftover from some
+# earlier sudo in the ancestry, so it must not be trusted there.
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=''
+    TARGET_USER="${SUDO_USER:-root}"
+else
+    SUDO='sudo'
+    TARGET_USER="$(id -un)"
+fi
 TARGET_HOME="$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)"
 [ -n "$TARGET_HOME" ] || TARGET_HOME="$HOME"
 
@@ -66,8 +73,14 @@ TARGET_HOME="$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)"
 as_user() {
     if [ "$(id -un)" = "$TARGET_USER" ]; then
         bash -lc "$*"
+    elif have sudo; then
+        # Note: NOT "$SUDO -u", which expands to a bare "-u ..." when we are
+        # already root and $SUDO is empty. Root needs no password for this.
+        sudo -u "$TARGET_USER" -H bash -lc "$*"
+    elif have runuser; then
+        runuser -l "$TARGET_USER" -c "$*"
     else
-        $SUDO -u "$TARGET_USER" -H bash -lc "$*"
+        su - "$TARGET_USER" -c "$*"
     fi
 }
 
@@ -78,7 +91,11 @@ own() { [ -e "$1" ] && $SUDO chown -R "$TARGET_USER" "$1" 2>/dev/null; return 0;
 require_sudo() {
     [ -z "$SUDO" ] && return 0
     have sudo || die "sudo is not installed and we are not root."
-    $SUDO -v || die "sudo authentication failed."
+    # `sudo -v` prompts for a password even where NOPASSWD applies, which fails
+    # outright when there is no tty. Probe non-interactively first: if that
+    # succeeds we are either NOPASSWD or already authenticated.
+    sudo -n true 2>/dev/null && return 0
+    sudo -v || die "sudo authentication failed."
 }
 
 # -------------------------------------------------------------------- config --
@@ -99,18 +116,42 @@ SESSION_NAME="${_env_session:-${SESSION_NAME:-claude}}"
 CLAUDE_CMD="${_env_cmd:-${CLAUDE_CMD:-claude}}"
 
 # ------------------------------------------------------------ screen session --
-session_exists() {
-    have screen || return 1
-    screen -ls 2>/dev/null | grep -qE "^[[:space:]]*[0-9]+\.${SESSION_NAME}[[:space:]]"
+# screen sockets live in a per-user directory (/run/screen/S-<user>), so root
+# cannot see a session belonging to $TARGET_USER. Every screen call has to be
+# made as that user or the session looks like it does not exist.
+screen_as_user() {
+    if [ "$(id -un)" = "$TARGET_USER" ]; then
+        screen "$@"
+    elif have sudo; then
+        sudo -u "$TARGET_USER" -H screen "$@"
+    else
+        su - "$TARGET_USER" -c "screen $(printf '%q ' "$@")"
+    fi
 }
 
+# Match the session name as a literal string, not a regex: SESSION_NAME is
+# user-supplied and a '.', '+' or '*' in it would otherwise match the wrong
+# thing — or nothing, silently starting a second session on every boot.
 session_line() {
-    screen -ls 2>/dev/null | grep -E "^[[:space:]]*[0-9]+\.${SESSION_NAME}[[:space:]]" | head -1 | sed 's/^[[:space:]]*//'
+    screen_as_user -ls 2>/dev/null | awk -v want="$SESSION_NAME" '
+        match($1, /^[0-9]+\./) && substr($1, RSTART + RLENGTH) == want {
+            sub(/^[[:space:]]+/, ""); print; exit
+        }'
+}
+
+session_exists() {
+    have screen || return 1
+    [ -n "$(session_line)" ]
 }
 
 session_start() {
     [ -x "$BOOT_SCRIPT" ] || die "boot script missing at $BOOT_SCRIPT — run 'claude.sh install' first."
     mkdir -p "$(dirname "$BOOT_LOG")"
+    # Create and hand over the log before writing to it: started as root, the
+    # tee below would otherwise leave a root-owned log that later runs as
+    # $TARGET_USER (including the @reboot cron job) cannot append to.
+    : >> "$BOOT_LOG" 2>/dev/null || true
+    own "$(dirname "$BOOT_LOG")"
     say "Starting session '$SESSION_NAME' in $WORK_DIR"
     # Hand the resolved settings down so the boot script agrees with what we
     # just printed, even when they came from the environment rather than config.
@@ -127,7 +168,7 @@ session_start() {
 
 session_stop() {
     if session_exists; then
-        screen -S "$SESSION_NAME" -X quit >/dev/null 2>&1
+        screen_as_user -S "$SESSION_NAME" -X quit >/dev/null 2>&1
         sleep 1
         if session_exists; then warn "session '$SESSION_NAME' would not die"
         else ok "session '$SESSION_NAME' stopped"; fi
@@ -140,7 +181,13 @@ session_enter() {
     session_exists || die "no session named '$SESSION_NAME' to attach to."
     [ -t 0 ] || die "not a terminal — attach by hand with: screen -r $SESSION_NAME"
     say "Attaching — detach again with ${C_BOLD}Ctrl-a d${C_RESET}"
-    exec screen -d -r "$SESSION_NAME"
+    if [ "$(id -un)" = "$TARGET_USER" ]; then
+        exec screen -d -r "$SESSION_NAME"
+    elif have sudo; then
+        exec sudo -u "$TARGET_USER" -H screen -d -r "$SESSION_NAME"
+    else
+        exec su - "$TARGET_USER" -c "screen -d -r $(printf %q "$SESSION_NAME")"
+    fi
 }
 
 session_menu() {
@@ -183,7 +230,7 @@ apt_ensure() {
 
 install_claude_code() {
     if as_user 'command -v claude >/dev/null 2>&1'; then
-        skip "claude code already installed ($(as_user 'claude --version' 2>/dev/null | head -1))"
+        skip "claude code already installed ($(as_user 'timeout 10 claude --version' 2>/dev/null | head -1))"
         return 0
     fi
     say "Installing Claude Code"
@@ -267,7 +314,11 @@ write_boot_script() {
 
 	mkdir -p "$WORK_DIR"
 
-	if screen -ls 2>/dev/null | grep -qE "^[[:space:]]*[0-9]+\.${SESSION_NAME}[[:space:]]"; then
+	# Literal name match — see the note in claude.sh; a regex here would let a
+	# name containing '.' or '+' start a duplicate session on every boot.
+	if screen -ls 2>/dev/null | awk -v want="$SESSION_NAME" '
+	       match($1, /^[0-9]+\./) && substr($1, RSTART + RLENGTH) == want { found = 1 }
+	       END { exit !found }'; then
 	    log "session '$SESSION_NAME' already running; nothing to do"
 	    exit 0
 	fi
@@ -362,7 +413,7 @@ status() {
     printf '  %-14s %s\n' 'boot script' "$BOOT_SCRIPT $([ -x "$BOOT_SCRIPT" ] || echo '(missing)')"
     printf '  %-14s %s\n' 'boot log'    "$BOOT_LOG"
     printf '  %-14s %s\n' 'crontab'     "$(crontab_get | grep -F -e "$CRON_MARKER" -e "$CRON_MARKER_LEGACY" || echo '(no @reboot entry)')"
-    printf '  %-14s %s\n' 'claude'      "$(as_user 'claude --version' 2>/dev/null | head -1 || echo 'not installed')"
+    printf '  %-14s %s\n' 'claude'      "$(as_user 'timeout 10 claude --version' 2>/dev/null | head -1 || echo 'not installed')"
     printf '  %-14s %s\n' 'running'     "$(session_exists && session_line || echo 'no')"
 }
 
