@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
 #
-# curl.sh — bootstrap an Ubuntu box for headless Claude Code work.
+# curl.sh — pick the tools you want on an Ubuntu box and install them.
 #
-#   bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) [command]
+#   bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh)
 #
-# With no command:
-#   * if a Claude Code screen session is already running -> Enter / Restart / Stop menu
-#   * otherwise -> provision the machine, then start the session
+# With no arguments you get a checklist: toggle things on, hit Enter, done.
+# Or name them directly:
 #
-# Every install step is idempotent, so re-running is cheap and safe.
+#   bash <(curl -Ss .../curl.sh) install git docker
+#   bash <(curl -Ss .../curl.sh) install all
 #
-# Config (env var, or ~/.config/claude-session.env):
-#   WORK_DIR      directory Claude Code is launched in   (default: $HOME/work)
-#   SESSION_NAME  screen session name                    (default: claude)
-#   CLAUDE_CMD    command used to launch Claude Code     (default: claude)
-#   ASSUME_YES=1  never prompt; take every default
+# Every install is idempotent — anything already present is reported and
+# skipped, so re-running is cheap and safe.
 #
-# Legacy scripts live in archive/.
+# Claude Code and its boot session live in claude.sh; picking "claude" here
+# just hands off to that script.
 
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
 readonly REPO_URL="https://github.com/mkolakowski/curl"
-readonly CRON_MARKER="# claude-session-boot (managed by curl.sh)"
+RAW_BASE="${CURL_SH_RAW_BASE:-https://raw.githubusercontent.com/mkolakowski/curl/main}"
 
 # ------------------------------------------------------------------ plumbing --
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -56,11 +54,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 if [ "$(id -u)" -eq 0 ]; then SUDO=''; else SUDO='sudo'; fi
 
 TARGET_USER="${SUDO_USER:-$(id -un)}"
-TARGET_HOME="$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)"
-[ -n "$TARGET_HOME" ] || TARGET_HOME="$HOME"
 
-# Run a command as the human who invoked us (not as root), with a login shell
-# so ~/.local/bin ends up on PATH.
 as_user() {
     if [ "$(id -un)" = "$TARGET_USER" ]; then
         bash -lc "$*"
@@ -69,117 +63,48 @@ as_user() {
     fi
 }
 
-# Anything we create in $TARGET_HOME while running under sudo must not stay
-# root-owned, or the session (and Claude Code) can't write to it later.
-own() { [ -e "$1" ] && $SUDO chown -R "$TARGET_USER" "$1" 2>/dev/null; return 0; }
-
 require_sudo() {
     [ -z "$SUDO" ] && return 0
     have sudo || die "sudo is not installed and we are not root."
     $SUDO -v || die "sudo authentication failed."
 }
 
-# -------------------------------------------------------------------- config --
-CONFIG_FILE="${CLAUDE_SESSION_CONFIG:-$TARGET_HOME/.config/claude-session.env}"
-BOOT_SCRIPT="$TARGET_HOME/.local/bin/claude-session-boot.sh"
-BOOT_LOG="$TARGET_HOME/.local/state/claude-session-boot.log"
+# ---------------------------------------------------------------- the catalog --
+# Order matters: this is the order things get installed in, so git comes early
+# and the Claude Code hand-off comes last.
+PKG_KEYS=(update    git     screen  btop     docker                          tailscale       claude)
+PKG_BLURB=(
+    "apt update && apt full-upgrade"
+    "version control"
+    "detachable terminal sessions"
+    "resource monitor"
+    "Docker Engine + Compose plugin"
+    "mesh VPN"
+    "Claude Code + boot session (runs claude.sh)"
+)
 
-# Environment beats the config file; the config file beats the built-in default.
-_env_work_dir="${WORK_DIR:-}"
-_env_session="${SESSION_NAME:-}"
-_env_cmd="${CLAUDE_CMD:-}"
+# check_<key> prints a short state string; empty output means "not installed".
+check_update()    { printf 'action'; }
+check_git()       { have git       && git --version 2>/dev/null | awk '{print $3}'; }
+check_screen()    { have screen    && screen --version 2>/dev/null | awk '{print $3}'; }
+check_btop()      { have btop      && printf 'installed'; }
+check_docker()    { have docker    && docker --version 2>/dev/null | awk '{print $3}' | tr -d ','; }
+check_tailscale() { have tailscale && tailscale version 2>/dev/null | head -1; }
+check_claude()    { as_user 'command -v claude >/dev/null 2>&1' && as_user 'claude --version' 2>/dev/null | awk '{print $1}'; }
 
-# shellcheck source=/dev/null
-[ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-
-WORK_DIR="${_env_work_dir:-${WORK_DIR:-$TARGET_HOME/work}}"
-SESSION_NAME="${_env_session:-${SESSION_NAME:-claude}}"
-CLAUDE_CMD="${_env_cmd:-${CLAUDE_CMD:-claude}}"
-
-# ------------------------------------------------------------ screen session --
-session_exists() {
-    have screen || return 1
-    screen -ls 2>/dev/null | grep -qE "^[[:space:]]*[0-9]+\.${SESSION_NAME}[[:space:]]"
-}
-
-session_line() {
-    screen -ls 2>/dev/null | grep -E "^[[:space:]]*[0-9]+\.${SESSION_NAME}[[:space:]]" | head -1 | sed 's/^[[:space:]]*//'
-}
-
-session_start() {
-    [ -x "$BOOT_SCRIPT" ] || die "boot script missing at $BOOT_SCRIPT — run '$0 install' first."
-    mkdir -p "$(dirname "$BOOT_LOG")"
-    say "Starting session '$SESSION_NAME' in $WORK_DIR"
-    # Hand the resolved settings down so the boot script agrees with what we
-    # just printed, even when they came from the environment rather than config.
-    local env_prefix
-    env_prefix="WORK_DIR=$(printf %q "$WORK_DIR") SESSION_NAME=$(printf %q "$SESSION_NAME") CLAUDE_CMD=$(printf %q "$CLAUDE_CMD")"
-    if as_user "$env_prefix $(printf %q "$BOOT_SCRIPT")" 2>&1 | tee -a "$BOOT_LOG"; then
-        sleep 1
-        if session_exists; then ok "session '$SESSION_NAME' is up"
-        else warn "session did not come up — see $BOOT_LOG"; fi
-    else
-        warn "boot script exited non-zero — see $BOOT_LOG"
-    fi
-}
-
-session_stop() {
-    if session_exists; then
-        screen -S "$SESSION_NAME" -X quit >/dev/null 2>&1
-        sleep 1
-        if session_exists; then warn "session '$SESSION_NAME' would not die"
-        else ok "session '$SESSION_NAME' stopped"; fi
-    else
-        skip "no session named '$SESSION_NAME'"
-    fi
-}
-
-session_enter() {
-    session_exists || die "no session named '$SESSION_NAME' to attach to."
-    [ -t 0 ] || die "not a terminal — attach by hand with: screen -r $SESSION_NAME"
-    say "Attaching — detach again with ${C_BOLD}Ctrl-a d${C_RESET}"
-    exec screen -d -r "$SESSION_NAME"
-}
-
-session_menu() {
-    printf '\n%s\n' "${C_BOLD}A Claude Code session is already running.${C_RESET}"
-    printf '  %-9s %s\n' 'session' "$(session_line)"
-    printf '  %-9s %s\n' 'workdir' "$WORK_DIR"
-    printf '  %-9s %s\n\n' 'boot' "$BOOT_SCRIPT"
-    cat <<-MENU
-	  1) Enter    attach to the running session
-	  2) Restart  stop it and start a fresh one
-	  3) Stop     stop it and exit
-	  4) Install  skip the menu, re-run provisioning
-	  5) Quit     leave everything alone
-	MENU
-    local choice
-    choice="$(ask "Choice [1]: " 1)"
-    printf '\n'
-    case "$choice" in
-        1|''|e|enter|a|attach) session_enter ;;
-        2|r|restart)           session_stop; session_start ;;
-        3|s|stop)              session_stop ;;
-        4|i|install)           provision; session_start ;;
-        5|q|quit)              say "Nothing changed." ;;
-        *)                     die "unrecognised choice '$choice'." ;;
-    esac
+pkg_index() {
+    local want="$1" i
+    for i in "${!PKG_KEYS[@]}"; do
+        [ "${PKG_KEYS[i]}" = "$want" ] && { printf '%s' "$i"; return 0; }
+    done
+    return 1
 }
 
 # ------------------------------------------------------------- install steps --
-apt_update_upgrade() {
-    say "Updating Ubuntu"
-    export DEBIAN_FRONTEND=noninteractive
-    $SUDO apt-get update -qq || { warn "apt-get update failed"; return 1; }
-    $SUDO apt-get upgrade -y -qq || { warn "apt-get upgrade failed"; return 1; }
-    $SUDO apt-get autoremove -y -qq >/dev/null 2>&1
-    ok "system packages up to date"
-}
-
 apt_ensure() {
     # apt_ensure <binary> <package> [package...]
     local bin="$1"; shift
-    if have "$bin"; then skip "$bin already installed ($("$bin" --version 2>/dev/null | head -1))"; return 0; fi
+    if have "$bin"; then skip "$bin already installed"; return 0; fi
     say "Installing $*"
     if DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq "$@"; then
         ok "$bin installed"
@@ -188,8 +113,28 @@ apt_ensure() {
     fi
 }
 
+apt_refresh() {
+    # Refresh the package lists once per run, not once per package.
+    [ -n "${_APT_REFRESHED:-}" ] && return 0
+    $SUDO apt-get update -qq || warn "apt-get update failed"
+    _APT_REFRESHED=1
+}
+
+install_update() {
+    say "Updating Ubuntu"
+    export DEBIAN_FRONTEND=noninteractive
+    apt_refresh
+    $SUDO apt-get upgrade -y -qq || { warn "apt-get upgrade failed"; return 1; }
+    $SUDO apt-get autoremove -y -qq >/dev/null 2>&1
+    ok "system packages up to date"
+}
+
+install_git()    { apt_refresh; apt_ensure git git; }
+install_screen() { apt_refresh; apt_ensure screen screen; }
+
 install_btop() {
     if have btop; then skip "btop already installed"; return 0; fi
+    apt_refresh
     say "Installing btop"
     if DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq btop 2>/dev/null && have btop; then
         ok "btop installed (apt)"
@@ -206,7 +151,7 @@ install_docker() {
         skip "docker + compose plugin already installed"
     else
         say "Installing Docker Engine + Compose plugin"
-        apt_ensure curl curl >/dev/null 2>&1
+        apt_refresh
         DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq ca-certificates curl gnupg || true
 
         # shellcheck source=/dev/null
@@ -261,233 +206,191 @@ install_tailscale() {
     fi
 }
 
-install_claude_code() {
-    if as_user 'command -v claude >/dev/null 2>&1'; then
-        skip "claude code already installed ($(as_user 'claude --version' 2>/dev/null | head -1))"
-        return 0
-    fi
-    say "Installing Claude Code"
-    as_user 'curl -fsSL https://claude.ai/install.sh | bash' \
-        || { warn "Claude Code install failed"; return 1; }
+# Claude Code lives in claude.sh. Prefer a copy sitting next to this script
+# (running from a clone), otherwise fetch it.
+install_claude() {
+    say "Handing off to claude.sh"
+    local here sibling
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || here=''
+    sibling="$here/claude.sh"
 
-    # The native installer drops the launcher in ~/.local/bin.
-    local rc="$TARGET_HOME/.profile"
-    if ! grep -qs '\.local/bin' "$rc" 2>/dev/null; then
-        # shellcheck disable=SC2016  # $HOME must stay literal inside .profile
-        printf '\n# added by curl.sh\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
-        ok "added ~/.local/bin to PATH in $rc"
-    fi
-    if as_user 'command -v claude >/dev/null 2>&1'; then
-        ok "claude code installed"
+    if [ -n "$here" ] && [ -r "$sibling" ]; then
+        ok "using $sibling"
+        bash "$sibling" install
     else
-        warn "claude not on PATH yet — open a new shell, or check ~/.local/bin/claude"
-    fi
-}
-
-# --------------------------------------------------------- session scaffolding --
-write_config() {
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    if [ -r "$CONFIG_FILE" ]; then
-        skip "config already at $CONFIG_FILE"
-        return 0
-    fi
-    cat > "$CONFIG_FILE" <<-CONF
-	# Read by claude-session-boot.sh and curl.sh. Edit freely.
-	WORK_DIR=$WORK_DIR
-	SESSION_NAME=$SESSION_NAME
-	CLAUDE_CMD=$CLAUDE_CMD
-	CONF
-    own "$(dirname "$CONFIG_FILE")"
-    ok "wrote $CONFIG_FILE"
-}
-
-write_boot_script() {
-    local dest="$BOOT_SCRIPT" tmp
-    mkdir -p "$(dirname "$dest")" "$(dirname "$BOOT_LOG")" "$WORK_DIR"
-    tmp="$(mktemp)"
-
-    cat > "$tmp" <<-'BOOT'
-	#!/usr/bin/env bash
-	#
-	# claude-session-boot.sh — launch Claude Code in a detached screen session.
-	#
-	# Written by curl.sh as a STUB. Everything between the EDIT markers is yours:
-	# put whatever needs to happen before Claude Code starts in there. curl.sh will
-	# not overwrite this file once it exists (it writes a .new alongside instead).
-	#
-	# Run by hand, or automatically at boot via the @reboot crontab entry.
-
-	set -uo pipefail
-
-	CONFIG_FILE="${CLAUDE_SESSION_CONFIG:-$HOME/.config/claude-session.env}"
-
-	# Environment beats the config file; the config file beats the default.
-	_env_wd="${WORK_DIR:-}"; _env_sn="${SESSION_NAME:-}"; _env_cc="${CLAUDE_CMD:-}"
-	# shellcheck source=/dev/null
-	[ -r "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-
-	WORK_DIR="${_env_wd:-${WORK_DIR:-$HOME/work}}"
-	SESSION_NAME="${_env_sn:-${SESSION_NAME:-claude}}"
-	CLAUDE_CMD="${_env_cc:-${CLAUDE_CMD:-claude}}"
-
-	export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-	log() { printf '%s %s\n' "$(date -Is)" "$*"; }
-
-	# ---8<--- EDIT BELOW — your own pre-launch steps (stub) ---8<---
-	# Cron fires @reboot before the network is necessarily up, so a short wait and
-	# any repo/credential setup belongs here. Examples:
-	#
-	#   sleep 20
-	#   git -C "$WORK_DIR" pull --ff-only
-	#   export ANTHROPIC_API_KEY="$(cat "$HOME/.config/anthropic.key")"
-	#   docker compose -f "$WORK_DIR/compose.yaml" up -d
-	#
-	# ---8<--- EDIT ABOVE ---8<---
-
-	mkdir -p "$WORK_DIR"
-
-	if screen -ls 2>/dev/null | grep -qE "^[[:space:]]*[0-9]+\.${SESSION_NAME}[[:space:]]"; then
-	    log "session '$SESSION_NAME' already running; nothing to do"
-	    exit 0
-	fi
-
-	log "starting '$SESSION_NAME' in $WORK_DIR"
-	screen -dmS "$SESSION_NAME" bash -lc "cd $(printf %q "$WORK_DIR") && exec $CLAUDE_CMD"
-	log "attach with: screen -r $SESSION_NAME"
-	BOOT
-
-    if [ ! -e "$dest" ]; then
-        install -m 0755 "$tmp" "$dest"
-        rm -f "$tmp"
-        ok "wrote $dest"
-    elif cmp -s "$tmp" "$dest"; then
-        rm -f "$tmp"
-        skip "$dest already current"
-    else
-        install -m 0755 "$tmp" "$dest.new"
-        rm -f "$tmp"
-        warn "kept your $dest — newest stub written to $dest.new"
-    fi
-    chmod +x "$dest" 2>/dev/null || true
-    own "$(dirname "$dest")"; own "$(dirname "$BOOT_LOG")"; own "$WORK_DIR"
-}
-
-crontab_get() { $SUDO crontab -u "$TARGET_USER" -l 2>/dev/null; }
-crontab_put() { $SUDO crontab -u "$TARGET_USER" -; }
-
-install_cron() {
-    local line="@reboot $BOOT_SCRIPT >> $BOOT_LOG 2>&1 $CRON_MARKER"
-    local current
-    current="$(crontab_get)"
-    if printf '%s\n' "$current" | grep -qxF "$line"; then
-        skip "@reboot crontab entry already present"
-        return 0
-    fi
-    if { printf '%s\n' "$current" | grep -vF "$CRON_MARKER" | sed '/^$/d'; printf '%s\n' "$line"; } | crontab_put; then
-        ok "installed @reboot crontab entry for $TARGET_USER"
-    else
-        warn "could not write crontab for $TARGET_USER"
-    fi
-}
-
-remove_cron() {
-    local current
-    current="$(crontab_get)"
-    if printf '%s\n' "$current" | grep -qF "$CRON_MARKER"; then
-        printf '%s\n' "$current" | grep -vF "$CRON_MARKER" | sed '/^$/d' | crontab_put \
-            && ok "removed @reboot crontab entry"
-    else
-        skip "no managed crontab entry to remove"
-    fi
-}
-
-choose_work_dir() {
-    [ -n "$_env_work_dir" ] && return 0     # explicitly set via env — don't ask
-    [ -r "$CONFIG_FILE" ]   && return 0     # already configured — don't ask
-    local answer
-    answer="$(ask "Working directory for Claude Code [$WORK_DIR]: " "$WORK_DIR")"
-    WORK_DIR="${answer/#\~/$TARGET_HOME}"
-}
-
-# ------------------------------------------------------------------ commands --
-provision() {
-    require_sudo
-    choose_work_dir
-
-    printf '\n%s\n' "${C_BOLD}Provisioning $(hostname) for $TARGET_USER${C_RESET}"
-    printf '%s\n\n' "${C_DIM}work dir $WORK_DIR · session $SESSION_NAME${C_RESET}"
-
-    apt_update_upgrade
-    apt_ensure git git                       # git first, as promised
-    apt_ensure screen screen
-    apt_ensure curl curl
-    apt_ensure crontab cron || apt_ensure crontab cronie
-    install_btop
-    install_docker
-    install_tailscale
-    install_claude_code
-
-    say "Setting up the boot session"
-    write_config
-    write_boot_script
-    install_cron
-
-    printf '\n%s\n' "${C_GREEN}${C_BOLD}Provisioning complete.${C_RESET}"
-}
-
-status() {
-    printf '%s\n' "${C_BOLD}claude-session status${C_RESET}"
-    printf '  %-14s %s\n' 'work dir'   "$WORK_DIR"
-    printf '  %-14s %s\n' 'session'    "$SESSION_NAME"
-    printf '  %-14s %s\n' 'claude cmd' "$CLAUDE_CMD"
-    printf '  %-14s %s\n' 'config'     "$CONFIG_FILE $([ -r "$CONFIG_FILE" ] || echo '(missing)')"
-    printf '  %-14s %s\n' 'boot script' "$BOOT_SCRIPT $([ -x "$BOOT_SCRIPT" ] || echo '(missing)')"
-    printf '  %-14s %s\n' 'boot log'   "$BOOT_LOG"
-    printf '  %-14s %s\n' 'crontab'    "$(crontab_get | grep -F "$CRON_MARKER" || echo '(no @reboot entry)')"
-    printf '  %-14s %s\n' 'running'    "$(session_exists && session_line || echo 'no')"
-    printf '\n  %-14s\n' 'tools'
-    local t
-    for t in git screen btop docker tailscale claude; do
-        if have "$t" || as_user "command -v $t >/dev/null 2>&1"; then
-            printf '    %-10s %s\n' "$t" "${C_GREEN}present${C_RESET}"
-        else
-            printf '    %-10s %s\n' "$t" "${C_RED}missing${C_RESET}"
+        have curl || { apt_refresh; apt_ensure curl curl; }
+        ok "fetching $RAW_BASE/claude.sh"
+        local tmp; tmp="$(mktemp)"
+        if curl -fsSL "$RAW_BASE/claude.sh" -o "$tmp" && [ -s "$tmp" ]; then
+            bash "$tmp" install
+            local rc=$?
+            rm -f "$tmp"
+            return $rc
         fi
+        rm -f "$tmp"
+        warn "could not fetch claude.sh from $RAW_BASE"
+        return 1
+    fi
+}
+
+# ---------------------------------------------------------------- the picker --
+# SELECTED[i] is 1 when entry i is chosen.
+declare -a SELECTED
+
+selection_reset() {
+    local i
+    for i in "${!PKG_KEYS[@]}"; do SELECTED[i]=0; done
+}
+
+# print_catalog [nomark]  — pad plain text first, then colourise, so escape
+# sequences never throw the column widths off.
+print_catalog() {
+    local nomark="${1:-}" i key raw colour pad mark
+    if [ -n "$nomark" ]; then
+        printf '\n  %-3s %-11s %-13s %s\n' '#' 'name' 'installed' 'what it is'
+    else
+        printf '\n  %-3s %-3s %-11s %-13s %s\n' '' '#' 'name' 'installed' 'what it is'
+    fi
+    printf '  %s\n' "$(printf '%.0s-' {1..72})"
+    for i in "${!PKG_KEYS[@]}"; do
+        key="${PKG_KEYS[i]}"
+        raw="$("check_$key" 2>/dev/null)"
+        if [ "$key" = update ]; then raw='-'; colour="$C_DIM"
+        elif [ -n "$raw" ];        then colour="$C_GREEN"
+        else raw='no';                  colour="$C_DIM"
+        fi
+        printf -v pad '%-13s' "$raw"
+        [ "${SELECTED[i]:-0}" = 1 ] && mark="${C_GREEN}[x]${C_RESET}" || mark='[ ]'
+        if [ -n "$nomark" ]; then
+            printf '  %-3s %-11s %b %s\n' "$((i + 1))" "$key" "${colour}${pad}${C_RESET}" "${C_DIM}${PKG_BLURB[i]}${C_RESET}"
+        else
+            printf '  %b %-3s %-11s %b %s\n' "$mark" "$((i + 1))" "$key" "${colour}${pad}${C_RESET}" "${C_DIM}${PKG_BLURB[i]}${C_RESET}"
+        fi
+    done
+    printf '\n'
+}
+
+picker() {
+    selection_reset
+    local input tok idx count=0
+
+    while true; do
+        print_catalog
+        printf '  %s\n' "${C_DIM}numbers toggle · a=all · m=missing only · n=none · q=quit${C_RESET}"
+        input="$(ask "Install [Enter to confirm]: " '')"
+
+        case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
+            q|quit|exit) say "Nothing changed."; return 1 ;;
+            a|all)  for idx in "${!PKG_KEYS[@]}"; do SELECTED[idx]=1; done; continue ;;
+            n|none) selection_reset; continue ;;
+            m|missing)
+                selection_reset
+                for idx in "${!PKG_KEYS[@]}"; do
+                    [ "${PKG_KEYS[idx]}" = update ] && continue
+                    [ -z "$("check_${PKG_KEYS[idx]}" 2>/dev/null)" ] && SELECTED[idx]=1
+                done
+                continue ;;
+            '')
+                count=0
+                for idx in "${!PKG_KEYS[@]}"; do
+                    [ "${SELECTED[idx]}" = 1 ] && count=$((count + 1))
+                done
+                if [ "$count" -eq 0 ]; then
+                    warn "nothing selected — pick some numbers, or q to quit"
+                    continue
+                fi
+                return 0 ;;
+        esac
+
+        # Otherwise: a list of numbers and/or names to toggle.
+        for tok in $(printf '%s' "$input" | tr ',' ' '); do
+            if printf '%s' "$tok" | grep -qE '^[0-9]+$'; then
+                idx=$((tok - 1))
+                if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#PKG_KEYS[@]}" ]; then
+                    [ "${SELECTED[idx]}" = 1 ] && SELECTED[idx]=0 || SELECTED[idx]=1
+                else
+                    warn "no entry numbered $tok"
+                fi
+            elif idx="$(pkg_index "$tok")"; then
+                [ "${SELECTED[idx]}" = 1 ] && SELECTED[idx]=0 || SELECTED[idx]=1
+            else
+                warn "unknown entry '$tok'"
+            fi
+        done
     done
 }
 
-uninstall() {
-    say "Removing the boot session scaffolding (packages are left alone)"
-    session_stop
-    remove_cron
-    [ -e "$BOOT_SCRIPT" ] && { rm -f "$BOOT_SCRIPT"; ok "removed $BOOT_SCRIPT"; }
-    warn "left $CONFIG_FILE in place — delete it by hand if you want it gone"
+run_selection() {
+    local i key failed=() done_=()
+    printf '\n%s\n' "${C_BOLD}Installing on $(hostname) for $TARGET_USER${C_RESET}"
+    require_sudo
+    for i in "${!PKG_KEYS[@]}"; do
+        [ "${SELECTED[i]}" = 1 ] || continue
+        key="${PKG_KEYS[i]}"
+        printf '\n'
+        if "install_$key"; then done_+=("$key"); else failed+=("$key"); fi
+    done
+
+    printf '\n%s\n' "${C_BOLD}Done.${C_RESET}"
+    [ ${#done_[@]}  -gt 0 ] && printf '  %s %s\n' "${C_GREEN}ok${C_RESET}    " "${done_[*]}"
+    [ ${#failed[@]} -gt 0 ] && printf '  %s %s\n' "${C_RED}failed${C_RESET}" "${failed[*]}"
+    [ ${#failed[@]} -eq 0 ]
+}
+
+select_by_name() {
+    # select_by_name <name> [name...]  — used by the non-interactive path
+    selection_reset
+    local name idx
+    for name in "$@"; do
+        case "$name" in
+            all)     for idx in "${!PKG_KEYS[@]}"; do SELECTED[idx]=1; done ;;
+            missing)
+                for idx in "${!PKG_KEYS[@]}"; do
+                    [ "${PKG_KEYS[idx]}" = update ] && continue
+                    [ -z "$("check_${PKG_KEYS[idx]}" 2>/dev/null)" ] && SELECTED[idx]=1
+                done ;;
+            *)
+                if idx="$(pkg_index "$name")"; then
+                    SELECTED[idx]=1
+                else
+                    die "unknown package '$name'. Try: curl.sh list"
+                fi ;;
+        esac
+    done
+}
+
+# ------------------------------------------------------------------ commands --
+list_catalog() {
+    selection_reset
+    printf '%s' "${C_BOLD}Available${C_RESET}"
+    print_catalog nomark
 }
 
 usage() {
     cat <<-USAGE
-	${C_BOLD}curl.sh${C_RESET} — provision Ubuntu for headless Claude Code work
+	${C_BOLD}curl.sh${C_RESET} — pick the tools you want on an Ubuntu box and install them
 
 	  bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) [command]
 
 	${C_BOLD}Commands${C_RESET}
-	  (none)      menu if a session is running, otherwise install + start
-	  install     run every provisioning step (idempotent)
-	  start       launch the session via the boot script
-	  enter       attach to the running session
-	  restart     stop and relaunch the session
-	  stop        stop the session
-	  status      show config, tooling and session state
-	  update      apt update + upgrade only
-	  reboot      reboot the machine
-	  uninstall   remove the boot script and @reboot entry
-	  help        this text
+	  (none)              interactive checklist
+	  install <name>...   install the named entries without prompting
+	  install all         install everything
+	  install missing     install whatever is not there yet
+	  list                show the catalog and what is already installed
+	  update              apt update + full-upgrade only
+	  reboot              reboot the machine
+	  help                this text
 
-	${C_BOLD}Config${C_RESET} (env var, or $CONFIG_FILE)
-	  WORK_DIR      directory Claude Code runs in    (now: $WORK_DIR)
-	  SESSION_NAME  screen session name              (now: $SESSION_NAME)
-	  CLAUDE_CMD    launch command                   (now: $CLAUDE_CMD)
-	  ASSUME_YES=1  never prompt, take the defaults
+	${C_BOLD}Entries${C_RESET}
+	  ${PKG_KEYS[*]}
+
+	${C_BOLD}Environment${C_RESET}
+	  ASSUME_YES=1        never prompt, take the defaults
+	  NO_COLOR=1          plain output
+
+	Claude Code and its boot session live in claude.sh:
+	  bash <(curl -Ss $RAW_BASE/claude.sh)
 
 	  $REPO_URL
 	USAGE
@@ -495,19 +398,25 @@ usage() {
 
 main() {
     case "${1:-}" in
-        ''|default)
-            if session_exists; then session_menu; else provision; session_start; fi ;;
-        install|setup)       provision ;;
-        start|boot)          session_start ;;
-        enter|attach)        session_enter ;;
-        restart)             session_stop; session_start ;;
-        stop|kill)           session_stop ;;
-        status|st)           status ;;
-        update)              require_sudo; apt_update_upgrade ;;
-        reboot)              say "Rebooting…"; $SUDO reboot ;;
-        uninstall)           uninstall ;;
-        help|-h|--help)      usage ;;
-        *)                   usage; die "unknown command '$1'." ;;
+        '')
+            picker && run_selection ;;
+        install|add|i)
+            shift
+            [ $# -gt 0 ] || die "nothing named. Try: curl.sh install all"
+            select_by_name "$@"
+            run_selection ;;
+        list|ls)        list_catalog ;;
+        update)         require_sudo; install_update ;;
+        reboot)         say "Rebooting…"; $SUDO reboot ;;
+        help|-h|--help) usage ;;
+        *)
+            # Bare names are a shorthand for `install <names>`.
+            if pkg_index "$1" >/dev/null || [ "$1" = all ] || [ "$1" = missing ]; then
+                select_by_name "$@"
+                run_selection
+            else
+                usage; die "unknown command '$1'."
+            fi ;;
     esac
 }
 
