@@ -13,6 +13,55 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.0.1] - 2026-07-27
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Create home directories as the user, not as root
+
+Running claude.sh as root left ~/.local owned by root: mkdir -p on
+~/.local/bin creates the parent too, and only the leaf was handed back.
+The Claude Code installer runs as the target user, so it then failed
+with EACCES creating ~/.local/share and claude was never installed.
+
+Directories under the target user's home are now created as that user,
+and ~/.config, ~/.local and the work directory are handed over on every
+install, which repairs boxes an earlier version already broke.
+
+The boot stub records a checksum of what was written. An untouched stub
+is upgraded in place on the next run rather than producing a .new file
+every time the packaged version changes; a stub you have edited is still
+never overwritten.
+
+2.0.0 claimed to remove archive/.probe but the deletion was not part of
+the commit. Removing it here instead.
+```
+
+</details>
+
+### Fixed
+
+- Running `claude.sh` as root no longer leaves `~/.local` owned by root, which
+  made the Claude Code installer fail with `EACCES: permission denied, mkdir
+  '~/.local/share'`. `mkdir -p ~/.local/bin` creates `~/.local` too, and only
+  the leaf was being handed back to the user. Directories in the target user's
+  home are now created as that user, and `~/.config`, `~/.local` and the work
+  directory are handed over on every install — so a box an earlier version
+  already broke is repaired by re-running.
+- An unmodified `claude-session-boot.sh` is upgraded in place instead of
+  producing a `.new` file every time the packaged stub changes. A checksum of
+  the last written stub is kept beside it; a stub you have edited yourself is
+  still never overwritten.
+
+### Removed
+
+- `archive/.probe`, a stray empty file committed by accident in 1.0.0. The
+  2.0.0 entry claimed this, but the deletion was not actually part of that
+  commit.
+
 ## [2.0.0] - 2026-07-27
 
 ### Commit message
@@ -129,10 +178,6 @@ Claude-Session: https://claude.ai/code/session_01PN1YYcEXvDEpYVfLf1ugK5
   session, which would start a duplicate on every boot.
 - A wedged `claude --version` can no longer hang provisioning; version probes
   are wrapped in `timeout 10`.
-
-### Removed
-
-- `archive/.probe`, a stray empty file committed by accident in 1.0.0.
 
 ## [1.0.0] - 2026-07-27
 

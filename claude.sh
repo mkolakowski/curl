@@ -88,6 +88,28 @@ as_user() {
 # root-owned, or the session (and Claude Code) can't write to it later.
 own() { [ -e "$1" ] && $SUDO chown -R "$TARGET_USER" "$1" 2>/dev/null; return 0; }
 
+# mkdir as the target user. Creating ~/.local/bin as root also creates ~/.local
+# as root, and chowning only the leaf leaves the parent unwritable — which is
+# how the Claude Code installer ends up failing with EACCES on ~/.local/share.
+mkdir_for_user() {
+    as_user "mkdir -p $(printf %q "$1")" 2>/dev/null && return 0
+    mkdir -p "$1" && own "$1"
+}
+
+# Make sure the directories both this script and the Claude Code installer
+# write to exist and belong to $TARGET_USER, repairing anything an earlier run
+# created as root.
+ensure_home_dirs() {
+    local d
+    for d in "$TARGET_HOME/.config" "$TARGET_HOME/.local/bin" \
+             "$TARGET_HOME/.local/share" "$TARGET_HOME/.local/state" "$WORK_DIR"; do
+        mkdir_for_user "$d"
+    done
+    own "$TARGET_HOME/.config"
+    own "$TARGET_HOME/.local"
+    own "$WORK_DIR"
+}
+
 require_sudo() {
     [ -z "$SUDO" ] && return 0
     have sudo || die "sudo is not installed and we are not root."
@@ -146,7 +168,7 @@ session_exists() {
 
 session_start() {
     [ -x "$BOOT_SCRIPT" ] || die "boot script missing at $BOOT_SCRIPT — run 'claude.sh install' first."
-    mkdir -p "$(dirname "$BOOT_LOG")"
+    mkdir_for_user "$(dirname "$BOOT_LOG")"
     # Create and hand over the log before writing to it: started as root, the
     # tee below would otherwise leave a root-owned log that later runs as
     # $TARGET_USER (including the @reboot cron job) cannot append to.
@@ -270,7 +292,9 @@ write_config() {
 
 write_boot_script() {
     local dest="$BOOT_SCRIPT" tmp
-    mkdir -p "$(dirname "$dest")" "$(dirname "$BOOT_LOG")" "$WORK_DIR"
+    mkdir_for_user "$(dirname "$dest")"
+    mkdir_for_user "$(dirname "$BOOT_LOG")"
+    mkdir_for_user "$WORK_DIR"
     tmp="$(mktemp)"
 
     cat > "$tmp" <<-'BOOT'
@@ -328,13 +352,27 @@ write_boot_script() {
 	log "attach with: screen -r $SESSION_NAME"
 	BOOT
 
+    # A checksum of what we last wrote, so an untouched stub can be upgraded in
+    # place instead of spawning a .new file on every change, while a stub you
+    # have actually edited is still never overwritten.
+    local stamp="$dest.sha256"
+    _stub_sum() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
+    _stub_record() { _stub_sum "$dest" > "$stamp" 2>/dev/null; own "$stamp"; }
+
     if [ ! -e "$dest" ]; then
         install -m 0755 "$tmp" "$dest"
         rm -f "$tmp"
+        _stub_record
         ok "wrote $dest"
     elif cmp -s "$tmp" "$dest"; then
         rm -f "$tmp"
+        [ -r "$stamp" ] || _stub_record
         skip "$dest already current"
+    elif [ -r "$stamp" ] && [ "$(_stub_sum "$dest")" = "$(cat "$stamp" 2>/dev/null)" ]; then
+        install -m 0755 "$tmp" "$dest"
+        rm -f "$tmp"
+        _stub_record
+        ok "updated $dest (it was unmodified since we wrote it)"
     else
         install -m 0755 "$tmp" "$dest.new"
         rm -f "$tmp"
@@ -388,6 +426,8 @@ provision() {
 
     printf '\n%s\n' "${C_BOLD}Setting up Claude Code on $(hostname) for $TARGET_USER${C_RESET}"
     printf '%s\n\n' "${C_DIM}work dir $WORK_DIR · session $SESSION_NAME${C_RESET}"
+
+    ensure_home_dirs
 
     say "Installing what the session needs"
     apt_ensure git git                       # git first, as everything wants it
