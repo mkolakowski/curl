@@ -13,6 +13,73 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.1.0] - 2026-07-28
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Support multiple sessions, with an optional Remote Control flag
+
+claude.sh managed exactly one session. It now manages any number, each
+with its own working directory, listed one per line in
+~/.config/claude-sessions.conf:
+
+    claude    /home/matt/work        autostart
+    api       /home/matt/work/api    autostart remote
+    scratch   /tmp/scratch           noautostart
+
+Only autostart sessions are brought back by the @reboot entry, so a
+scratch session can stay registered without returning after a reboot.
+Flags are order-independent. Running claude.sh with no arguments now
+prints a table of sessions and their state; pick a number to Enter,
+Restart, Stop or Start one, or use s / r / x to act on all of them.
+
+A session marked remote launches as "claude --remote-control <name>", so
+it can be driven from claude.ai/code and the Claude mobile app while
+still running on this box against this filesystem. Toggle it with
+"claude.sh remote <name> on|off". Remote Control needs a claude.ai login
+and refuses API keys, so the script warns when ANTHROPIC_API_KEY or
+ANTHROPIC_BASE_URL is set at the moment you turn the flag on rather than
+letting the session fail later.
+
+Upgrading is automatic: an existing ~/.config/claude-session.env is
+folded into the registry on first run and the session carries over.
+```
+
+</details>
+
+### Added
+
+- Any number of sessions, each with its own working directory, registered one
+  per line in `~/.config/claude-sessions.conf`. `add`, `rm` and `list` manage
+  them; `start`, `stop` and `restart` take any number of names, or act on every
+  autostart session when given none.
+- A `remote` flag per session. It launches Claude Code with
+  [Remote Control](https://code.claude.com/docs/en/remote-control), so the
+  session can be driven from claude.ai/code and the Claude mobile app while
+  still running on the box. Toggle with `claude.sh remote <name> on|off`, or
+  from the session menu. Turning it on checks for `ANTHROPIC_API_KEY` and
+  `ANTHROPIC_BASE_URL`, which Remote Control rejects, and says so immediately.
+- A `noautostart` flag, so a session can stay registered without being brought
+  back by the `@reboot` entry.
+- Running `claude.sh` with no arguments prints a table of every session with its
+  state, flags and working directory, then lets you act on one or on all.
+  Sessions running under `screen` that are not in the registry are listed too,
+  rather than silently ignored.
+
+### Changed
+
+- **Breaking:** `WORK_DIR` and `SESSION_NAME` no longer configure the script;
+  sessions come from the registry instead. An existing
+  `~/.config/claude-session.env` is migrated into it automatically on first run,
+  so an upgrade keeps working without intervention.
+- **Breaking:** `enter` takes a session name. It may still be omitted when
+  exactly one session is running.
+- The boot script starts every autostart session, and accepts a name to start
+  just one.
+
 ## [2.0.1] - 2026-07-27
 
 ### Commit message

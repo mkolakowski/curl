@@ -76,80 +76,117 @@ install docker`.
 bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/claude.sh)
 ```
 
-On a fresh box this installs what it needs (git, screen, cron, Claude Code),
-writes the session files, and starts the session. If a session is already
-running it shows a menu instead of reinstalling anything:
+Runs any number of Claude Code sessions on the box, each in its own detached
+`screen` with its own working directory, and brings them back after a reboot.
+On a fresh box it installs what it needs (git, screen, cron, Claude Code), asks
+where you want to work, and starts your first session. After that, running it
+with no arguments gives you the table:
 
 ```
-A Claude Code session is already running.
-  session   4711.claude	(07/27/26 10:14:02)	(Detached)
-  workdir   /home/matt/work
-  boot      /home/matt/.local/bin/claude-session-boot.sh
+  #   session      state     auto  remote  work directory
+  --------------------------------------------------------------------------
+  1   claude       running   yes   -       /home/matt/work
+  2   api          running   yes   yes     /home/matt/work/api
+  3   scratch      stopped   no    -       /tmp/scratch
 
-  1) Enter    attach to the running session
-  2) Restart  stop it and start a fresh one
-  3) Stop     stop it and exit
-  4) Install  skip the menu, re-run the setup
-  5) Quit     leave everything alone
+  number = manage that one · s = start all · r = restart all · x = stop all · q = quit
 ```
+
+Pick a number to Enter, Restart, Stop or Start that session, or toggle its
+remote control. `s`, `r` and `x` act on everything at once.
+
+### Sessions
+
+Sessions live one per line in `~/.config/claude-sessions.conf`, which is plain
+enough to edit by hand:
+
+```
+# name        work directory                    flags
+claude        /home/matt/work                   autostart
+api           /home/matt/work/api               autostart remote
+scratch       /tmp/scratch                      noautostart
+```
+
+`autostart` decides whether the `@reboot` entry brings a session back — leave it
+off for a scratch session you don't want returning after every reboot. Flags can
+appear in any order. Work directories may not contain spaces.
+
+```
+bash <(curl -Ss .../claude.sh) add api ~/work/api
+bash <(curl -Ss .../claude.sh) add scratch /tmp/scratch --no-autostart
+bash <(curl -Ss .../claude.sh) rm scratch
+```
+
+Upgrading from the single-session version is automatic: the old
+`~/.config/claude-session.env` is folded into the registry on first run and your
+existing session carries over.
+
+### Remote control
+
+A session marked `remote` launches with [Claude Code's Remote
+Control](https://code.claude.com/docs/en/remote-control), so you can drive it
+from [claude.ai/code](https://claude.ai/code) or the Claude mobile app while it
+keeps running here, against this filesystem. Useful for a box you want to poke
+at from your phone.
+
+```
+bash <(curl -Ss .../claude.sh) remote api on
+bash <(curl -Ss .../claude.sh) remote api off
+```
+
+It needs a claude.ai login on a Pro, Max, Team or Enterprise plan — API keys are
+not supported, so `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` must be unset.
+Sign in once on the box with `claude auth login`. The script warns you if either
+variable is set when you turn the flag on. On Team and Enterprise an Owner has
+to enable Remote Control in the admin settings first.
 
 ### What it leaves behind
 
-`~/.config/claude-session.env` holds the settings. Written once, never
-overwritten — edit it freely.
+`~/.config/claude-sessions.conf` is the registry above.
 
-`~/.local/bin/claude-session-boot.sh` is the script that actually launches
-Claude Code. It's written as a **stub**, with a marked-off block in the middle
-for your own pre-launch steps — waiting for the network, pulling a repo,
-exporting a key, bringing containers up. Once it exists the script won't
-overwrite it; if the packaged stub has changed you get a `.new` file alongside
-and your version stays put.
+`~/.local/bin/claude-session-boot.sh` is the script that actually launches the
+sessions. It's written as a **stub**, with a marked-off block for your own
+pre-launch steps — waiting for the network, pulling a repo, bringing containers
+up. It records a checksum of what was written, so an untouched stub is upgraded
+in place when the packaged version changes; once you edit it, it is never
+overwritten and you get a `.new` file alongside instead.
 
 ```bash
 # ---8<--- EDIT BELOW — your own pre-launch steps (stub) ---8<---
 #   sleep 20
-#   git -C "$WORK_DIR" pull --ff-only
-#   export ANTHROPIC_API_KEY="$(cat "$HOME/.config/anthropic.key")"
+#   docker compose -f "$HOME/work/compose.yaml" up -d
 # ---8<--- EDIT ABOVE ---8<---
 ```
 
-A `@reboot` crontab entry runs that boot script on every boot, logging to
-`~/.local/state/claude-session-boot.log`. The boot script is itself idempotent —
-if a session with the configured name is already up it exits without starting a
-second one.
+A `@reboot` crontab entry runs it on every boot, logging to
+`~/.local/state/claude-session-boot.log`. Both the script and the stub are
+idempotent — a session already up is left alone rather than started twice.
 
 ### Commands
 
 | Command | Action |
 | ------ | ------ |
-| *(none)* | menu if a session is running, otherwise install + start |
-| `install` | install Claude Code and write the session files |
-| `start` | launch the session via the boot script |
-| `enter` | attach to the running session |
-| `restart` | stop and relaunch the session |
-| `stop` | stop the session |
-| `status` | show config and session state |
+| *(none)* | the table, then pick a session or act on all |
+| `install` | install Claude Code and write the boot files |
+| `add <name> <dir> [--no-autostart] [--remote]` | register a session |
+| `rm <name>` | unregister a session (does not stop it) |
+| `list` | print the table and exit |
+| `start [name...]` | start the named sessions, or every autostart one |
+| `stop [name...]` | stop the named sessions, or all of them |
+| `restart [name...]` | stop and start again |
+| `enter [name]` | attach; the name may be omitted if only one is running |
+| `remote <name> on\|off` | turn Remote Control on or off |
+| `status` | table plus registry, cron and Claude Code state |
 | `uninstall` | remove the boot script and `@reboot` entry (leaves packages) |
 | `help` | usage |
 
-### Configuration
-
-Set these in the environment or in `~/.config/claude-session.env`. The
-environment wins, then the config file, then the default.
+### Environment
 
 | Variable | Default | Meaning |
 | ------ | ------ | ------ |
-| `WORK_DIR` | `$HOME/work` | directory Claude Code is launched in |
-| `SESSION_NAME` | `claude` | name of the `screen` session |
+| `CLAUDE_SESSIONS_CONF` | `~/.config/claude-sessions.conf` | registry path |
 | `CLAUDE_CMD` | `claude` | command used to launch Claude Code |
 | `ASSUME_YES` | *unset* | never prompt, take every default |
-
-```
-WORK_DIR=/srv/projects bash <(curl -Ss .../claude.sh) install
-```
-
-On a first install with no `WORK_DIR` set, it asks where you want to work and
-defaults to `~/work`.
 
 ## Notes
 
@@ -158,8 +195,10 @@ deliberately install Claude Code, the config, and the crontab entry as *you*. If
 you do run them under `sudo`, they follow `$SUDO_USER` back to your account
 rather than dumping everything in `/root`.
 
-Attach to the session by hand any time with `screen -r claude`, and detach again
-with <kbd>Ctrl-a</kbd> <kbd>d</kbd>.
+Attach to a session by hand any time with `screen -r <name>`, and detach again
+with <kbd>Ctrl-a</kbd> <kbd>d</kbd>. Note that screen sockets are per-user: as
+root you won't see a session belonging to your own account, so use
+`claude.sh enter <name>`, which crosses that boundary for you.
 
 `NO_COLOR=1` turns off colour in both scripts.
 
