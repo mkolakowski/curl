@@ -13,6 +13,46 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.2.0] - 2026-07-28
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Add a guided flow for creating a session
+
+Registering a session meant knowing the add syntax and typing a path
+from memory. Pressing n in the session table now walks through it: name,
+working directory, autostart, remote control, and whether to start it
+straight away. The same flow is available as "claude.sh new".
+
+The directory question offers candidates rather than a blank prompt --
+the current directory, the work directory and what is under it, the
+parents of sessions already registered, and home -- with "somewhere
+else" to type a path. A relative path resolves against the current
+directory and a directory that does not exist yet is created.
+
+Names are validated as they are typed: an illegal character or a name
+already in the registry re-prompts instead of failing at the end. With
+no terminal, or under ASSUME_YES, it points at claude.sh add rather than
+silently taking defaults for questions nobody answered.
+```
+
+</details>
+
+### Added
+
+- `n` in the session table, and `claude.sh new`, walk through creating a
+  session: name, working directory, autostart, remote control, and whether to
+  start it now.
+- The working directory question offers candidates — the current directory, the
+  work directory and its subdirectories, the parents of registered sessions, and
+  home — with "somewhere else" to type a path. Relative paths resolve against
+  the current directory, and a directory that does not exist yet is created.
+- Names are checked as they are entered, so an illegal character or a duplicate
+  re-prompts rather than failing after every other question has been answered.
+
 ## [2.1.0] - 2026-07-28
 
 ### Commit message

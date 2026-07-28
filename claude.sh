@@ -63,6 +63,16 @@ ask() {
     printf '%s\n' "${reply:-$default}"
 }
 
+ask_yn() {
+    local prompt="$1" default="$2" reply
+    reply="$(ask "$prompt [$([ "$default" = y ] && echo 'Y/n' || echo 'y/N')]: " "$default")"
+    case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
+        y|yes) return 0 ;;
+        n|no)  return 1 ;;
+        *)     [ "$default" = y ] ;;
+    esac
+}
+
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # ---------------------------------------------------------- user / privilege --
@@ -417,14 +427,95 @@ manage_one() {
     esac
 }
 
+# Plausible places to run a session, newest-first-ish and deduped: where you
+# are now, the work directory and what is under it, siblings of sessions you
+# already have, then home. Paths with spaces are dropped — the registry is
+# whitespace-separated and cannot hold them.
+candidate_dirs() {
+    {
+        [ -n "${PWD:-}" ] && [ "$PWD" != / ] && printf '%s\n' "$PWD"
+        printf '%s\n' "$TARGET_HOME/work"
+        find "$TARGET_HOME/work" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort
+        sessions_read | cut -f2 | while IFS= read -r d; do [ -n "$d" ] && dirname "$d"; done
+        printf '%s\n' "$TARGET_HOME"
+    } 2>/dev/null | grep -v '[[:space:]]' | awk 'NF && !seen[$0]++' | head -8
+}
+
+new_session_interactive() {
+    if [ ! -r /dev/tty ] || [ -n "${ASSUME_YES:-}" ]; then
+        warn "not interactive — use: claude.sh add <name> <dir> [--no-autostart] [--remote]"
+        return 1
+    fi
+
+    printf '\n%s\n\n' "${C_BOLD}New session${C_RESET}"
+
+    local name
+    while true; do
+        name="$(ask "  Name: " '')"
+        if [ -z "$name" ]; then warn "a name is required"; continue; fi
+        case "$name" in
+            *[!A-Za-z0-9._-]*) warn "letters, digits, dot, dash and underscore only"; continue ;;
+        esac
+        if session_known "$name"; then warn "'$name' is already registered"; continue; fi
+        break
+    done
+
+    local cands=() d
+    while IFS= read -r d; do [ -n "$d" ] && cands+=("$d"); done < <(candidate_dirs)
+    [ ${#cands[@]} -gt 0 ] || cands=("$TARGET_HOME/work")
+
+    printf '\n  %s\n' "Where should it run?"
+    local i
+    for i in "${!cands[@]}"; do
+        if [ -d "${cands[i]}" ]; then
+            printf '    %d) %s\n' "$((i + 1))" "${cands[i]}"
+        else
+            printf '    %d) %s %s\n' "$((i + 1))" "${cands[i]}" "${C_DIM}(will be created)${C_RESET}"
+        fi
+    done
+    printf '    %d) %s\n' "$(( ${#cands[@]} + 1 ))" "somewhere else"
+
+    local pick dir
+    pick="$(ask "  Choice [1]: " 1)"
+    if printf '%s' "$pick" | grep -qE '^[0-9]+$' && [ "$pick" -ge 1 ] && [ "$pick" -le ${#cands[@]} ]; then
+        dir="${cands[$((pick - 1))]}"
+    else
+        dir="$(ask "  Path: " "${cands[0]}")"
+    fi
+    dir="${dir/#\~/$TARGET_HOME}"
+    case "$dir" in
+        '' ) warn "a path is required"; return 1 ;;
+        *[[:space:]]*) warn "work directories may not contain spaces"; return 1 ;;
+        /*) ;;
+        *) dir="$PWD/$dir" ;;
+    esac
+    [ -d "$dir" ] || printf '  %s\n' "${C_DIM}$dir does not exist yet and will be created${C_RESET}"
+
+    printf '\n'
+    local auto=autostart rem=''
+    ask_yn "  Start it automatically after a reboot?" y || auto=noautostart
+    if ask_yn "  Enable remote control (drive it from claude.ai and the Claude app)?" n; then
+        rem=remote
+    fi
+
+    printf '\n'
+    session_add "$name" "$dir" "$auto" "$rem" || return 1
+
+    if ask_yn "  Start it now?" y; then
+        printf '\n'
+        start_one "$name"
+    fi
+}
+
 main_menu() {
     local input name
     while true; do
         print_table
-        printf '  %s\n' "${C_DIM}number = manage that one · s = start all · r = restart all · x = stop all · q = quit${C_RESET}"
+        printf '  %s\n' "${C_DIM}number = manage that one · n = new session · s = start all · r = restart all · x = stop all · q = quit${C_RESET}"
         input="$(ask "Choice: " q)"
         case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
             q|quit|'') say "Nothing changed."; return 0 ;;
+            n|new)     new_session_interactive ;;
             s|start)   printf '\n'; for_each start_one   "$(autostart_names | tr '\n' ' ')" ;;
             r|restart) printf '\n'; for_each restart_one "$(autostart_names | tr '\n' ' ')" ;;
             x|stop)    printf '\n'; for_each stop_one ;;
@@ -675,9 +766,11 @@ usage() {
 	  bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/claude.sh) [command]
 
 	${C_BOLD}Commands${C_RESET}
-	  (none)                    table of sessions, then pick one or act on all
+	  (none)                    table of sessions; pick one, press n for a new
+	                            one, or act on all of them
 	  install                   install Claude Code and write the boot files
-	  add <name> <dir> [flags]  register a session
+	  new                       register a session, prompting for each answer
+	  add <name> <dir> [flags]  register a session in one line
 	                            flags: --no-autostart, --remote
 	  rm <name>                 unregister a session (does not stop it)
 	  list                      print the table and exit
@@ -756,6 +849,7 @@ main() {
             fi ;;
         install|setup)  provision ;;
         add)            cmd_add "$@" ;;
+        new)            new_session_interactive ;;
         rm|remove)      [ $# -ge 1 ] || die "usage: claude.sh rm <name>"; session_remove "$1" ;;
         list|ls)        print_table ;;
         remote)

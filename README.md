@@ -89,11 +89,36 @@ with no arguments gives you the table:
   2   api          running   yes   yes     /home/matt/work/api
   3   scratch      stopped   no    -       /tmp/scratch
 
-  number = manage that one · s = start all · r = restart all · x = stop all · q = quit
+  number = manage that one · n = new session · s = start all · r = restart all · x = stop all · q = quit
 ```
 
 Pick a number to Enter, Restart, Stop or Start that session, or toggle its
-remote control. `s`, `r` and `x` act on everything at once.
+remote control. `s`, `r` and `x` act on everything at once. `n` creates a new
+session, asking for each answer in turn:
+
+```
+New session
+
+  Name: api
+
+  Where should it run?
+    1) /home/matt/work
+    2) /home/matt/work/api
+    3) /home/matt/work/web
+    4) /home/matt
+    5) somewhere else
+  Choice [1]: 2
+
+  Start it automatically after a reboot? [Y/n]: y
+  Enable remote control (drive it from claude.ai and the Claude app)? [y/N]: y
+  Start it now? [Y/n]: y
+```
+
+The suggested directories are where you are now, your work directory and what
+is under it, the parents of sessions you already have, and your home directory.
+Pick "somewhere else" to type a path; a relative one resolves against the
+current directory, and anything that does not exist yet is created. The same
+flow is available as `claude.sh new`.
 
 ### Sessions
 
@@ -112,6 +137,7 @@ off for a scratch session you don't want returning after every reboot. Flags can
 appear in any order. Work directories may not contain spaces.
 
 ```
+bash <(curl -Ss .../claude.sh) new
 bash <(curl -Ss .../claude.sh) add api ~/work/api
 bash <(curl -Ss .../claude.sh) add scratch /tmp/scratch --no-autostart
 bash <(curl -Ss .../claude.sh) rm scratch
@@ -166,8 +192,9 @@ idempotent — a session already up is left alone rather than started twice.
 
 | Command | Action |
 | ------ | ------ |
-| *(none)* | the table, then pick a session or act on all |
+| *(none)* | the table, then pick a session, press `n`, or act on all |
 | `install` | install Claude Code and write the boot files |
+| `new` | register a session, prompting for each answer |
 | `add <name> <dir> [--no-autostart] [--remote]` | register a session |
 | `rm <name>` | unregister a session (does not stop it) |
 | `list` | print the table and exit |
