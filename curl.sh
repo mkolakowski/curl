@@ -89,10 +89,11 @@ require_sudo() {
 # ---------------------------------------------------------------- the catalog --
 # Order matters: this is the order things get installed in, so git comes early
 # and the Claude Code hand-off comes last.
-PKG_KEYS=(update    git     screen  btop     docker                          tailscale       claude)
+PKG_KEYS=(update    git     gh      screen  btop     docker                 tailscale       claude)
 PKG_BLURB=(
     "apt update && apt full-upgrade"
     "version control"
+    "GitHub CLI"
     "detachable terminal sessions"
     "resource monitor"
     "Docker Engine + Compose plugin"
@@ -103,6 +104,7 @@ PKG_BLURB=(
 # check_<key> prints a short state string; empty output means "not installed".
 check_update()    { printf 'action'; }
 check_git()       { have git       && git --version 2>/dev/null | awk '{print $3}'; }
+check_gh()        { have gh        && gh --version 2>/dev/null | head -1 | awk '{print $3}'; }
 check_screen()    { have screen    && screen --version 2>/dev/null | awk '{print $3}'; }
 check_btop()      { have btop      && printf 'installed'; }
 check_docker()    { have docker    && docker --version 2>/dev/null | awk '{print $3}' | tr -d ','; }
@@ -147,6 +149,41 @@ install_update() {
 }
 
 install_git()    { apt_refresh; apt_ensure git git; }
+
+install_gh() {
+    if have gh; then
+        skip "gh already installed ($(gh --version 2>/dev/null | head -1 | awk '{print $3}'))"
+    else
+        say "Installing GitHub CLI"
+        apt_refresh
+        DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq ca-certificates curl || true
+
+        $SUDO install -m 0755 -d /etc/apt/keyrings
+        local key=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+        if [ ! -s "$key" ]; then
+            $SUDO curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o "$key" \
+                || { warn "could not fetch the GitHub CLI signing key"; return 1; }
+            $SUDO chmod go+r "$key"
+        fi
+
+        local repo_line
+        repo_line="deb [arch=$(dpkg --print-architecture) signed-by=$key] https://cli.github.com/packages stable main"
+        if ! grep -qsxF "$repo_line" /etc/apt/sources.list.d/github-cli.list; then
+            printf '%s\n' "$repo_line" | $SUDO tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+            $SUDO apt-get update -qq
+        fi
+
+        DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq gh \
+            || { warn "gh install failed"; return 1; }
+        ok "gh $(gh --version 2>/dev/null | head -1 | awk '{print $3}') installed"
+    fi
+
+    if as_user 'gh auth status >/dev/null 2>&1'; then
+        skip "gh is already authenticated"
+    else
+        warn "gh is not signed in yet — run: gh auth login"
+    fi
+}
 install_screen() { apt_refresh; apt_ensure screen screen; }
 
 install_btop() {

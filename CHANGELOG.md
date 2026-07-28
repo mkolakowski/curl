@@ -13,6 +13,55 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.3.0] - 2026-07-28
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Clone a repo when creating a session; add the GitHub CLI to curl.sh
+
+The directory question in "claude.sh new" gains a "clone a GitHub repo"
+option: give it owner/name, an https or git@ URL, or a local path, say
+where to put it, and the clone becomes the session's working directory.
+It clones with gh when the GitHub CLI is installed and signed in, so
+private repos work, and falls back to git otherwise, saying which it
+used. A destination that is already a clone offers to be reused rather
+than failing, and a non-empty directory that is not a clone is refused.
+
+curl.sh gains a gh entry, installed from GitHub's own apt repository
+next to git in the catalog, and reports whether gh is signed in.
+
+Also fix a registry corruption: the work directory column was padded to
+34 characters with no guaranteed separator, so a path of exactly that
+length ran into the flags and left a line like
+"/home/matt/origin/demo-repoautostart". Parsing that gave back a wrong
+directory and silently dropped the flags. Every column now emits a
+literal space after its padding.
+```
+
+</details>
+
+### Added
+
+- "Clone a GitHub repo" in the working-directory question of `claude.sh new`.
+  Accepts `owner/name`, an `https://` or `git@` URL, or a local path, asks where
+  to put it, and uses the clone as the session's working directory. Uses `gh`
+  when it is installed and signed in so private repos work, falling back to
+  `git` and saying so. Reuses a destination that is already a clone, and refuses
+  a non-empty directory that is not one.
+- `gh`, the GitHub CLI, in the `curl.sh` catalog, installed from GitHub's own
+  apt repository. It sits next to `git` and reports whether it is signed in.
+
+### Fixed
+
+- A work directory of exactly 34 characters corrupted its registry line. The
+  column was padded to 34 with no guaranteed separator, so the path ran into the
+  flags — `/home/matt/origin/demo-repoautostart` — and parsing it back gave a
+  wrong directory with the flags silently dropped. Every column now emits a
+  literal space after its padding, so a long path widens the row instead.
+
 ## [2.2.0] - 2026-07-28
 
 ### Commit message

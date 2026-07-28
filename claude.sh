@@ -195,7 +195,7 @@ sessions_rewrite_without() {
     { sessions_header
       sessions_read | awk -F'\t' -v drop="$drop" '
           $1 != drop {
-              printf "%-12s%-34s%s%s\n", $1, $2, ($3 == "no" ? "noautostart" : "autostart"), ($4 == "yes" ? " remote" : "")
+              printf "%-11s %-33s %s%s\n", $1, $2, ($3 == "no" ? "noautostart" : "autostart"), ($4 == "yes" ? " remote" : "")
           }'
     }
 }
@@ -218,7 +218,7 @@ session_add() {
     # shuffle a session to the bottom and renumber the menu underneath you.
     { sessions_header
       sessions_read | awk -F'\t' -v n="$name" -v d="$dir" -v a="$auto" -v r="$remote" '
-          function row(nm, dr, au, rm) { printf "%-12s%-34s%s%s\n", nm, dr, au, (rm != "" ? " remote" : "") }
+          function row(nm, dr, au, rm) { printf "%-11s %-33s %s%s\n", nm, dr, au, (rm != "" ? " remote" : "") }
           $1 == n { row(n, d, a, r); seen = 1; next }
           { row($1, $2, ($3 == "no" ? "noautostart" : "autostart"), ($4 == "yes" ? "remote" : "")) }
           END { if (!seen) row(n, d, a, r) }'
@@ -273,7 +273,7 @@ migrate_legacy_config() {
     sn="$(awk -F= '/^SESSION_NAME=/ { print $2 }' "$LEGACY_CONF" | tail -1)"
     [ -n "$wd" ] || return 0
     [ -n "$sn" ] || sn=claude
-    { sessions_header; printf '%-12s%-34s%s\n' "$sn" "$wd" autostart; } | sessions_write
+    { sessions_header; printf '%-11s %-33s %s\n' "$sn" "$wd" autostart; } | sessions_write
     ok "migrated $LEGACY_CONF into $SESSIONS_CONF ('$sn' -> $wd)"
 }
 
@@ -441,6 +441,61 @@ candidate_dirs() {
     } 2>/dev/null | grep -v '[[:space:]]' | awk 'NF && !seen[$0]++' | head -8
 }
 
+# Clone a GitHub repo and use it as a session's working directory. Sets
+# CLONED_DIR on success. All output goes to the terminal rather than stdout,
+# so the caller reads the result from the variable instead of capturing it.
+CLONED_DIR=''
+clone_repo_flow() {
+    CLONED_DIR=''
+    local spec url name parent dest
+    spec="$(ask "  Repo (owner/name, or a full URL): " '')"
+    spec="${spec%/}"; spec="${spec%.git}"
+    case "$spec" in
+        '')             warn "a repo is required"; return 1 ;;
+        *[[:space:]]*)  warn "that does not look like a repo"; return 1 ;;
+        *://*|git@*)    url="$spec" ;;
+        /*|./*|../*|\~*) url="${spec/#\~/$TARGET_HOME}" ;;   # a local repo or mirror
+        */*/*)          warn "'$spec' has too many slashes — use owner/name"; return 1 ;;
+        */*)            url="https://github.com/$spec" ;;
+        *)              warn "use owner/name, a full git URL, or a local path"; return 1 ;;
+    esac
+    name="${url##*/}"; name="${name%.git}"
+    [ -n "$name" ] || { warn "could not work out a directory name from '$spec'"; return 1; }
+
+    parent="$(ask "  Clone into [$TARGET_HOME/work]: " "$TARGET_HOME/work")"
+    parent="${parent/#\~/$TARGET_HOME}"
+    case "$parent" in
+        *[[:space:]]*) warn "work directories may not contain spaces"; return 1 ;;
+        /*) ;;
+        *) parent="$PWD/$parent" ;;
+    esac
+    dest="$parent/$name"
+
+    if [ -d "$dest/.git" ]; then
+        say "$dest is already a clone"
+        if ask_yn "  Use it as it is?" y; then CLONED_DIR="$dest"; return 0; fi
+        return 1
+    fi
+    if [ -e "$dest" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ]; then
+        warn "$dest already exists and is not empty"
+        return 1
+    fi
+
+    mkdir_for_user "$parent"
+    say "Cloning $url into $dest"
+    # gh handles private repos once you have signed in; git is the fallback and
+    # is fine for anything public.
+    if have gh && as_user 'gh auth status >/dev/null 2>&1'; then
+        as_user "gh repo clone $(printf %q "$url") $(printf %q "$dest")" || { warn "clone failed"; return 1; }
+    else
+        have gh && skip "gh is installed but not signed in — cloning with git (public repos only)"
+        as_user "git clone $(printf %q "$url") $(printf %q "$dest")" || { warn "clone failed"; return 1; }
+    fi
+    own "$dest"
+    ok "cloned into $dest"
+    CLONED_DIR="$dest"
+}
+
 new_session_interactive() {
     if [ ! -r /dev/tty ] || [ -n "${ASSUME_YES:-}" ]; then
         warn "not interactive — use: claude.sh add <name> <dir> [--no-autostart] [--remote]"
@@ -473,11 +528,17 @@ new_session_interactive() {
             printf '    %d) %s %s\n' "$((i + 1))" "${cands[i]}" "${C_DIM}(will be created)${C_RESET}"
         fi
     done
-    printf '    %d) %s\n' "$(( ${#cands[@]} + 1 ))" "somewhere else"
+    local n_else=$(( ${#cands[@]} + 1 )) n_clone=$(( ${#cands[@]} + 2 ))
+    printf '    %d) %s\n' "$n_else"  "somewhere else"
+    printf '    %d) %s\n' "$n_clone" "clone a GitHub repo"
 
     local pick dir
     pick="$(ask "  Choice [1]: " 1)"
-    if printf '%s' "$pick" | grep -qE '^[0-9]+$' && [ "$pick" -ge 1 ] && [ "$pick" -le ${#cands[@]} ]; then
+    if [ "$pick" = "$n_clone" ]; then
+        printf '\n'
+        clone_repo_flow || return 1
+        dir="$CLONED_DIR"
+    elif printf '%s' "$pick" | grep -qE '^[0-9]+$' && [ "$pick" -ge 1 ] && [ "$pick" -le ${#cands[@]} ]; then
         dir="${cands[$((pick - 1))]}"
     else
         dir="$(ask "  Path: " "${cands[0]}")"
@@ -770,6 +831,7 @@ usage() {
 	                            one, or act on all of them
 	  install                   install Claude Code and write the boot files
 	  new                       register a session, prompting for each answer
+	                            (including cloning a GitHub repo to work in)
 	  add <name> <dir> [flags]  register a session in one line
 	                            flags: --no-autostart, --remote
 	  rm <name>                 unregister a session (does not stop it)

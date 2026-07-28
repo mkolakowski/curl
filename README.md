@@ -50,9 +50,9 @@ Everything is idempotent — anything already present is reported and skipped, s
 re-running costs nothing. Installs happen in catalog order, so the system update
 runs first and `git` lands before anything that wants it.
 
-Two things need a human afterwards and the script says so at the time: `sudo
-tailscale up` to join your tailnet, and logging out and back in for the `docker`
-group to take effect.
+Three things need a human afterwards and the script says so at the time: `sudo
+tailscale up` to join your tailnet, `gh auth login` to sign the GitHub CLI in,
+and logging out and back in for the `docker` group to take effect.
 
 ### Commands
 
@@ -107,6 +107,7 @@ New session
     3) /home/matt/work/web
     4) /home/matt
     5) somewhere else
+    6) clone a GitHub repo
   Choice [1]: 2
 
   Start it automatically after a reboot? [Y/n]: y
@@ -119,6 +120,19 @@ is under it, the parents of sessions you already have, and your home directory.
 Pick "somewhere else" to type a path; a relative one resolves against the
 current directory, and anything that does not exist yet is created. The same
 flow is available as `claude.sh new`.
+
+"Clone a GitHub repo" clones one first and uses it as the working directory:
+
+```
+  Repo (owner/name, or a full URL): anthropics/claude-code
+  Clone into [/home/matt/work]:
+  :: Cloning https://github.com/anthropics/claude-code into /home/matt/work/claude-code
+```
+
+`owner/name`, an `https://` or `git@` URL, and a local path all work. If the
+GitHub CLI is installed and signed in it clones with `gh`, so private repos work
+too; otherwise it falls back to `git` and says so. If the destination is already
+a clone it offers to use it as it is rather than failing.
 
 ### Sessions
 
