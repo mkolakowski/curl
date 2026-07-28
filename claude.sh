@@ -157,10 +157,11 @@ sessions_read() {
          NF >= 2 {
              auto = "yes"; remote = "no"
              for (i = 3; i <= NF; i++) {
-                 if      ($i == "noautostart") auto   = "no"
-                 else if ($i == "autostart")   auto   = "yes"
-                 else if ($i == "remote")      remote = "yes"
-                 else if ($i == "local")       remote = "no"
+                 if      ($i == "noautostart")        auto   = "no"
+                 else if ($i == "autostart")          auto   = "yes"
+                 else if ($i == "remote")             remote = "server"
+                 else if ($i == "remote-interactive") remote = "interactive"
+                 else if ($i == "local")              remote = "no"
              }
              print $1 "\t" $2 "\t" auto "\t" remote
          }' "$SESSIONS_CONF"
@@ -179,11 +180,14 @@ sessions_header() {
     printf '%s\n' \
         '# Claude Code sessions, one per line. Managed by claude.sh, safe to edit.' \
         '#' \
-        '#   <name>  <work directory>  [autostart|noautostart] [remote|local]' \
+        '#   <name>  <work directory>  [autostart|noautostart] [remote|remote-interactive|local]' \
         '#' \
-        '# autostart  started by the @reboot entry (the default)' \
-        '# remote     launch with Claude Code Remote Control, so the session can' \
-        '#            be driven from claude.ai/code and the Claude mobile app' \
+        '# autostart           started by the @reboot entry (the default)' \
+        '# remote              Remote Control server mode: claude remote-control.' \
+        '#                     Drive it from claude.ai/code or the Claude app. There' \
+        '#                     is no local prompt; the screen shows connection status.' \
+        '# remote-interactive  a normal session that is ALSO reachable remotely:' \
+        '#                     claude --remote-control. You can type on the box too.' \
         '#' \
         '# Work directories may not contain spaces.' \
         ''
@@ -195,7 +199,8 @@ sessions_rewrite_without() {
     { sessions_header
       sessions_read | awk -F'\t' -v drop="$drop" '
           $1 != drop {
-              printf "%-11s %-33s %s%s\n", $1, $2, ($3 == "no" ? "noautostart" : "autostart"), ($4 == "yes" ? " remote" : "")
+              printf "%-11s %-33s %s%s\n", $1, $2, ($3 == "no" ? "noautostart" : "autostart"),
+                     ($4 == "server" ? " remote" : ($4 == "interactive" ? " remote-interactive" : ""))
           }'
     }
 }
@@ -218,14 +223,15 @@ session_add() {
     # shuffle a session to the bottom and renumber the menu underneath you.
     { sessions_header
       sessions_read | awk -F'\t' -v n="$name" -v d="$dir" -v a="$auto" -v r="$remote" '
-          function row(nm, dr, au, rm) { printf "%-11s %-33s %s%s\n", nm, dr, au, (rm != "" ? " remote" : "") }
+          function row(nm, dr, au, rm) { printf "%-11s %-33s %s%s\n", nm, dr, au, (rm != "" ? " " rm : "") }
           $1 == n { row(n, d, a, r); seen = 1; next }
-          { row($1, $2, ($3 == "no" ? "noautostart" : "autostart"), ($4 == "yes" ? "remote" : "")) }
+          { row($1, $2, ($3 == "no" ? "noautostart" : "autostart"),
+                ($4 == "server" ? "remote" : ($4 == "interactive" ? "remote-interactive" : ""))) }
           END { if (!seen) row(n, d, a, r) }'
     } | sessions_write
     mkdir_for_user "$dir"
-    ok "registered '$name' -> $dir ($auto${remote:+, remote})"
-    [ -n "$remote" ] && remote_preflight
+    ok "registered '$name' -> $dir ($auto${remote:+, $remote})"
+    [ -n "$remote" ] && { remote_preflight || true; }
     return 0
 }
 
@@ -240,27 +246,82 @@ session_set_remote() {
     local name="$1" on="$2" auto rem
     session_known "$name" || die "no session named '$name'. See: claude.sh list"
     [ "$(session_auto "$name")" = no ] && auto=noautostart || auto=autostart
-    [ "$on" = on ] && rem=remote || rem=''
+    case "$on" in
+        on|server)        rem=remote ;;
+        interactive)      rem='remote-interactive' ;;
+        off|no|local)     rem='' ;;
+        *) die "usage: claude.sh remote <name> on|interactive|off" ;;
+    esac
     session_add "$name" "$(session_dir "$name")" "$auto" "$rem"
     if session_running "$name"; then
         warn "'$name' is running — restart it for this to take effect: claude.sh restart $name"
     fi
 }
 
-# Remote Control needs a claude.ai login, and an API key in the environment
-# actively breaks it. Say so at the point the user opts in, not later.
+# Why Remote Control would refuse, as a list of reasons. Empty output means the
+# preconditions look right. This exists because `claude --remote-control` does
+# NOT fail when it cannot connect: it quietly starts an ordinary session and
+# shows a notification you never see from a detached screen.
+remote_blockers() {
+    have screen || true
+    if ! as_user 'command -v claude >/dev/null 2>&1'; then
+        printf '%s\n' "Claude Code is not installed"
+        return 0
+    fi
+    # `claude auth status` exits 0 only when signed in.
+    if ! as_user 'timeout 20 claude auth status >/dev/null 2>&1'; then
+        printf '%s\n' "not signed in to claude.ai — run: claude auth login"
+    fi
+    local v
+    for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
+        as_user "[ -n \"\${$v:-}\" ]" 2>/dev/null && printf '%s\n' "$v is set in the session environment; Remote Control needs a claude.ai login and refuses tokens"
+    done
+    # shellcheck disable=SC2016  # evaluated in the session's own shell, not here
+    as_user '[ -n "${ANTHROPIC_BASE_URL:-}" ]' 2>/dev/null && printf '%s\n' "ANTHROPIC_BASE_URL is set; Remote Control only works against api.anthropic.com"
+    for v in CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX; do
+        as_user "[ -n \"\${$v:-}\" ]" 2>/dev/null && printf '%s\n' "$v is set; Remote Control is not available on that provider"
+    done
+    return 0
+}
+
 remote_preflight() {
-    say "Remote Control notes"
-    printf '  %s\n' \
-        "${C_DIM}sessions launch as: $CLAUDE_CMD --remote-control <name>${C_RESET}" \
-        "${C_DIM}find them at claude.ai/code, or under Code in the Claude app${C_RESET}"
-    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-        warn "ANTHROPIC_API_KEY is set — Remote Control needs a claude.ai login and refuses API keys. Unset it."
+    local blockers
+    blockers="$(remote_blockers)"
+    if [ -z "$blockers" ]; then
+        skip "remote control preconditions look fine"
+        return 0
     fi
-    if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
-        warn "ANTHROPIC_BASE_URL is set — Remote Control only works against api.anthropic.com. Unset it."
+    warn "Remote Control will not connect:"
+    printf '%s\n' "$blockers" | sed 's/^/         - /' >&2
+    return 1
+}
+
+# What is the session actually showing? screen can dump a detached window, which
+# is the only way to see a Remote Control failure notice without attaching.
+session_screen_dump() {
+    local name="$1" tmp="/tmp/claude-session-$$.dump"
+    as_user "screen -S $(printf %q "$name") -X hardcopy $(printf %q "$tmp")" >/dev/null 2>&1
+    sleep 0.5
+    [ -r "$tmp" ] && { sed '/^[[:space:]]*$/d' "$tmp"; rm -f "$tmp"; }
+}
+
+# After starting a remote session, say whether it really connected.
+verify_remote() {
+    local name="$1" dump
+    sleep 4
+    dump="$(session_screen_dump "$name")"
+    if printf '%s' "$dump" | grep -qi 'claude\.ai/code\|remote control session\|session url'; then
+        ok "remote control is connected"
+        printf '%s\n' "$dump" | grep -io 'https://claude\.ai/code[^[:space:]]*' | head -1 | sed 's/^/         /'
+        return 0
     fi
-    skip "sign in once with: claude auth login   (Pro, Max, Team or Enterprise plan)"
+    if printf '%s' "$dump" | grep -qiE 'remote control (requires|is (not|disabled))|couldn.t (verify|reconnect)|remote credentials fetch failed|trust'; then
+        warn "the session started but Remote Control did not connect. It says:"
+        printf '%s\n' "$dump" | grep -iE 'remote control|trust|login|subscription' | head -4 | sed 's/^/         /' >&2
+        return 1
+    fi
+    warn "could not confirm Remote Control connected — check with: claude.sh doctor $name"
+    return 1
 }
 
 # An older single-session install left WORK_DIR/SESSION_NAME in a shell-style
@@ -319,16 +380,20 @@ start_one() {
     mkdir_for_user "$(dirname "$BOOT_LOG")"
     : >> "$BOOT_LOG" 2>/dev/null || true
     own "$(dirname "$BOOT_LOG")"
-    if [ "$(session_remote "$name")" = yes ]; then
-        say "Starting '$name' in $dir ${C_CYAN}(remote control)${C_RESET}"
-    else
-        say "Starting '$name' in $dir"
+    local mode; mode="$(session_remote "$name")"
+    case "$mode" in
+        server)      say "Starting '$name' in $dir ${C_CYAN}(remote control, server mode)${C_RESET}" ;;
+        interactive) say "Starting '$name' in $dir ${C_CYAN}(remote control, interactive)${C_RESET}" ;;
+        *)           say "Starting '$name' in $dir" ;;
+    esac
+    if [ "$mode" != no ]; then
+        remote_preflight || warn "starting anyway — fix the above and restart '$name'"
     fi
     as_user "CLAUDE_CMD=$(printf %q "$CLAUDE_CMD") $(printf %q "$BOOT_SCRIPT") $(printf %q "$name")" 2>&1 | tee -a "$BOOT_LOG"
     sleep 1
     if session_running "$name"; then
         ok "'$name' is up"
-        [ "$(session_remote "$name")" = yes ] && skip "find it at claude.ai/code, or under Code in the Claude app"
+        [ "$mode" != no ] && verify_remote "$name"
         return 0
     fi
     warn "'$name' did not come up — see $BOOT_LOG"
@@ -384,8 +449,11 @@ print_table() {
         count=$((count + 1))
         if session_running "$n"; then printf -v pad '%-9s' running; state="${C_GREEN}${pad}${C_RESET}"
         else                          printf -v pad '%-9s' stopped; state="${C_DIM}${pad}${C_RESET}"; fi
-        if [ "$remote" = yes ]; then printf -v r '%-7s' yes; r="${C_CYAN}${r}${C_RESET}"
-        else                         printf -v r '%-7s' '-';  r="${C_DIM}${r}${C_RESET}"; fi
+        case "$remote" in
+            server)      printf -v r '%-7s' server; r="${C_CYAN}${r}${C_RESET}" ;;
+            interactive) printf -v r '%-7s' inter;  r="${C_CYAN}${r}${C_RESET}" ;;
+            *)           printf -v r '%-7s' '-';    r="${C_DIM}${r}${C_RESET}" ;;
+        esac
         printf '  %-3s %-12s %b %-5s %b %s\n' "$count" "$n" "$state" "$auto" "$r" "$dir"
     done < <(sessions_read)
     if [ "$count" -eq 0 ]; then
@@ -684,10 +752,11 @@ write_boot_script() {
 	     NF >= 2 {
 	         auto = "yes"; remote = "no"
 	         for (i = 3; i <= NF; i++) {
-	             if      ($i == "noautostart") auto   = "no"
-	             else if ($i == "autostart")   auto   = "yes"
-	             else if ($i == "remote")      remote = "yes"
-	             else if ($i == "local")       remote = "no"
+	             if      ($i == "noautostart")        auto   = "no"
+	             else if ($i == "autostart")          auto   = "yes"
+	             else if ($i == "remote")             remote = "server"
+	             else if ($i == "remote-interactive") remote = "interactive"
+	             else if ($i == "local")              remote = "no"
 	         }
 	         print $1 "\t" $2 "\t" auto "\t" remote
 	     }' "$CONF" |
@@ -704,13 +773,19 @@ write_boot_script() {
 	        continue
 	    fi
 	    mkdir -p "$dir"
-	    if [ "$remote" = yes ]; then
-	        log "starting '$name' in $dir (remote control)"
-	        launch="$CLAUDE_CMD --remote-control $(printf %q "$name")"
-	    else
-	        log "starting '$name' in $dir"
-	        launch="$CLAUDE_CMD"
-	    fi
+	    case "$remote" in
+	        server)
+	            # Server mode: no local prompt, and it EXITS on failure instead
+	            # of quietly degrading to an ordinary session.
+	            log "starting '$name' in $dir (remote control, server mode)"
+	            launch="$CLAUDE_CMD remote-control --name $(printf %q "$name")" ;;
+	        interactive)
+	            log "starting '$name' in $dir (remote control, interactive)"
+	            launch="$CLAUDE_CMD --remote-control $(printf %q "$name")" ;;
+	        *)
+	            log "starting '$name' in $dir"
+	            launch="$CLAUDE_CMD" ;;
+	    esac
 	    screen -dmS "$name" bash -lc "cd $(printf %q "$dir") && exec $launch"
 	done
 	BOOT
@@ -806,10 +881,60 @@ status() {
     printf '  %-14s %s\n' 'boot log'    "$BOOT_LOG"
     printf '  %-14s %s\n' 'crontab'     "$(crontab_get | grep -F -e "$CRON_MARKER" -e "$CRON_MARKER_LEGACY" || echo '(no @reboot entry)')"
     printf '  %-14s %s\n' 'claude'      "$(as_user 'timeout 10 claude --version' 2>/dev/null | head -1 || echo 'not installed')"
-    if sessions_read | awk -F'\t' '$4 == "yes" { found = 1 } END { exit !found }'; then
+    if sessions_read | awk -F'\t' '$4 != "no" { found = 1 } END { exit !found }'; then
         printf '  %-14s %s\n' 'remote' "some sessions use Remote Control — see claude.ai/code"
         [ -n "${ANTHROPIC_API_KEY:-}" ] && warn "ANTHROPIC_API_KEY is set; Remote Control will refuse it"
     fi
+}
+
+# Everything you need to see when a remote session is not showing up.
+doctor() {
+    local only="${1:-}" n dir auto remote dump
+    printf '%s\n\n' "${C_BOLD}claude.sh doctor${C_RESET}"
+
+    printf '  %-22s %s\n' 'user'    "$TARGET_USER ($TARGET_HOME)"
+    printf '  %-22s %s\n' 'claude'  "$(as_user 'timeout 10 claude --version' 2>/dev/null | head -1 || echo 'not installed')"
+    if as_user 'timeout 20 claude auth status >/dev/null 2>&1'; then
+        printf '  %-22s %s\n' 'claude.ai login' "${C_GREEN}signed in${C_RESET}"
+    else
+        printf '  %-22s %s\n' 'claude.ai login' "${C_RED}not signed in${C_RESET}  (run: claude auth login)"
+    fi
+    local v val
+    for v in ANTHROPIC_API_KEY ANTHROPIC_BASE_URL CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX; do
+        val="$(as_user "printf '%s' \"\${$v:-}\"" 2>/dev/null)"
+        if [ -n "$val" ]; then
+            printf '  %-22s %s\n' "$v" "${C_RED}set${C_RESET}  (Remote Control refuses this)"
+        fi
+    done
+
+    printf '\n  %s\n' "${C_BOLD}Remote Control eligibility${C_RESET}"
+    local blockers; blockers="$(remote_blockers)"
+    if [ -z "$blockers" ]; then
+        printf '    %s\n' "${C_GREEN}nothing blocking it${C_RESET}"
+    else
+        printf '%s\n' "$blockers" | sed "s/^/    ${C_RED}x${C_RESET} /"
+    fi
+    printf '\n  %s\n' "${C_DIM}claude doctor says:${C_RESET}"
+    as_user 'timeout 30 claude doctor' 2>&1 | grep -iE 'remote|login|auth|version' | head -8 | sed 's/^/    /' \
+        || printf '    %s\n' "(claude doctor produced nothing)"
+
+    printf '\n  %s\n' "${C_BOLD}Sessions${C_RESET}"
+    while IFS="$TAB" read -r n dir auto remote; do
+        [ -n "$n" ] || continue
+        [ -z "$only" ] || [ "$only" = "$n" ] || continue
+        printf '    %-12s %-11s %s\n' "$n" "$([ "$remote" = no ] && echo local || echo "remote:$remote")" \
+            "$(session_running "$n" && echo running || echo stopped)"
+        if [ "$remote" != no ] && session_running "$n"; then
+            dump="$(session_screen_dump "$n")"
+            if printf '%s' "$dump" | grep -qi 'claude\.ai/code'; then
+                printf '      %s %s\n' "${C_GREEN}connected${C_RESET}" "$(printf '%s' "$dump" | grep -io 'https://claude\.ai/code[^[:space:]]*' | head -1)"
+            else
+                printf '      %s\n' "${C_YELLOW}no session URL on screen — last lines:${C_RESET}"
+                printf '%s\n' "$dump" | tail -6 | sed 's/^/        /'
+            fi
+        fi
+    done < <(sessions_read)
+    printf '\n  %s\n' "${C_DIM}boot log: $BOOT_LOG${C_RESET}"
 }
 
 uninstall() {
@@ -840,8 +965,13 @@ usage() {
 	  stop [name...]            stop the named sessions, or all of them
 	  restart [name...]         stop and start again
 	  enter [name]              attach; the name may be omitted if only one runs
-	  remote <name> on|off      turn Claude Code Remote Control on or off
+	  remote <name> on|interactive|off
+	                            on          server mode: claude remote-control
+	                                        (no local prompt; drive it remotely)
+	                            interactive claude --remote-control: a normal
+	                                        session that is also reachable remotely
 	  status                    table plus registry, cron and Claude Code state
+	  doctor [name]             why a remote session is not connecting
 	  uninstall                 remove the boot script and @reboot entry
 	  help                      this text
 
@@ -916,12 +1046,13 @@ main() {
         list|ls)        print_table ;;
         remote)
             [ $# -ge 2 ] || die "usage: claude.sh remote <name> on|off"
-            case "$2" in on|off) session_set_remote "$1" "$2" ;; *) die "usage: claude.sh remote <name> on|off" ;; esac ;;
+            session_set_remote "$1" "$2" ;;
         start|boot)     if [ $# -gt 0 ]; then for_each start_one "$@"; else for_each start_one "$(autostart_names | tr '\n' ' ')"; fi ;;
         stop|kill)      for_each stop_one "$@" ;;
         restart)        if [ $# -gt 0 ]; then for_each restart_one "$@"; else for_each restart_one "$(autostart_names | tr '\n' ' ')"; fi ;;
         enter|attach)   if [ $# -gt 0 ]; then enter_one "$1"; else enter_default; fi ;;
         status|st)      status ;;
+        doctor|diag)    doctor "${1:-}" ;;
         uninstall)      uninstall ;;
         help|-h|--help) usage ;;
         *)

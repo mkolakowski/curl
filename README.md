@@ -163,22 +163,60 @@ existing session carries over.
 
 ### Remote control
 
-A session marked `remote` launches with [Claude Code's Remote
-Control](https://code.claude.com/docs/en/remote-control), so you can drive it
-from [claude.ai/code](https://claude.ai/code) or the Claude mobile app while it
-keeps running here, against this filesystem. Useful for a box you want to poke
-at from your phone.
+A session can be reachable from [claude.ai/code](https://claude.ai/code) and the
+Claude mobile app while it keeps running here, against this filesystem. There
+are two modes, because Claude Code offers two:
 
 ```
-bash <(curl -Ss .../claude.sh) remote api on
+bash <(curl -Ss .../claude.sh) remote api on           # server mode
+bash <(curl -Ss .../claude.sh) remote api interactive  # interactive + remote
 bash <(curl -Ss .../claude.sh) remote api off
 ```
 
-It needs a claude.ai login on a Pro, Max, Team or Enterprise plan — API keys are
-not supported, so `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` must be unset.
-Sign in once on the box with `claude auth login`. The script warns you if either
-variable is set when you turn the flag on. On Team and Enterprise an Owner has
-to enable Remote Control in the admin settings first.
+`on` is **server mode** — `claude remote-control`. The session exists to be
+driven from your phone or browser; there is no local prompt, and attaching to
+the screen shows connection status and tool activity. It refuses to start at all
+if Remote Control can't connect, which is what you want on a headless box.
+
+`interactive` is `claude --remote-control` — an ordinary session that is *also*
+reachable remotely, so you can type on the box and from your phone
+interchangeably. The catch is that it does **not** fail when Remote Control
+can't connect: it quietly carries on as a normal local session and shows a
+notification you never see from a detached screen.
+
+Either way it needs a claude.ai login on a Pro, Max, Team or Enterprise plan.
+API keys are not supported, so `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`
+and `ANTHROPIC_BASE_URL` must all be unset. Sign in once on the box:
+
+```
+claude auth login
+```
+
+The script checks these before starting a remote session and says what is
+wrong, then reads the session's screen a few seconds after launch to confirm it
+really connected — printing the session URL if it did.
+
+### When a remote session doesn't appear
+
+```
+bash <(curl -Ss .../claude.sh) doctor
+```
+
+Reports the Claude Code version, whether you are signed in, any environment
+variable that Remote Control rejects, what `claude doctor` says about
+eligibility, and for each running remote session what is actually on its screen:
+
+```
+  claude.ai login        not signed in  (run: claude auth login)
+
+  Remote Control eligibility
+    x not signed in to claude.ai — run: claude auth login
+
+  Sessions
+    api          remote:server  running
+      no session URL on screen — last lines:
+        Remote Control requires a claude.ai subscription
+```
 
 ### What it leaves behind
 
@@ -216,7 +254,8 @@ idempotent — a session already up is left alone rather than started twice.
 | `stop [name...]` | stop the named sessions, or all of them |
 | `restart [name...]` | stop and start again |
 | `enter [name]` | attach; the name may be omitted if only one is running |
-| `remote <name> on\|off` | turn Remote Control on or off |
+| `remote <name> on\|interactive\|off` | Remote Control: server mode, interactive, or off |
+| `doctor [name]` | why a remote session is not connecting |
 | `status` | table plus registry, cron and Claude Code state |
 | `uninstall` | remove the boot script and `@reboot` entry (leaves packages) |
 | `help` | usage |

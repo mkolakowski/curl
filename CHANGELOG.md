@@ -13,6 +13,65 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.4.0] - 2026-07-28
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Start remote sessions in server mode, and report when they do not connect
+
+A session flagged remote launched as "claude --remote-control <name>",
+which is a normal interactive session that is additionally reachable
+from claude.ai. Crucially it does not fail when Remote Control cannot
+connect -- it carries on as an ordinary local session and shows a
+notification that nobody sees from a detached screen. That is why a
+remote session appeared to start yet never showed up at claude.ai/code.
+
+remote now means server mode: "claude remote-control --name <name>".
+That process exists to serve remote connections and exits when it cannot
+establish one, so a failure is visible instead of silent. The previous
+behaviour is still available as a separate flag value,
+remote-interactive, for a session you also want to type into on the box.
+
+Before starting a remote session the script now checks what Remote
+Control actually requires -- a claude.ai login via "claude auth status",
+and the absence of ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN,
+ANTHROPIC_BASE_URL, CLAUDE_CODE_USE_BEDROCK and CLAUDE_CODE_USE_VERTEX
+-- and names whatever is wrong. A few seconds after launch it dumps the
+session's screen with "screen -X hardcopy" and either prints the session
+URL or quotes the failure.
+
+Adds "claude.sh doctor [name]", which reports the version, login state,
+offending environment variables, what claude doctor says about
+eligibility, and what each running remote session currently shows.
+```
+
+</details>
+
+### Added
+
+- `claude.sh doctor [name]`, which answers "why is my remote session not
+  showing up": Claude Code version, whether you are signed in to claude.ai, any
+  environment variable Remote Control rejects, `claude doctor`'s eligibility
+  lines, and for each running remote session what is actually on its screen.
+- A `remote-interactive` flag value for the previous behaviour — a normal
+  session that is also reachable remotely, so you can type on the box as well.
+- Preconditions are checked before a remote session starts, and the session's
+  screen is read a few seconds after launch to confirm Remote Control really
+  connected, printing the claude.ai/code URL when it did.
+
+### Changed
+
+- **Breaking:** the `remote` flag now starts server mode
+  (`claude remote-control --name <name>`) rather than
+  `claude --remote-control <name>`. Server mode exists to be driven from
+  claude.ai or the mobile app and has no local prompt, but it fails loudly when
+  Remote Control cannot connect instead of silently degrading. Sessions that
+  want the old behaviour should use `remote-interactive`.
+- `claude.sh remote <name>` takes `on`, `interactive` or `off`.
+
 ## [2.3.0] - 2026-07-28
 
 ### Commit message
