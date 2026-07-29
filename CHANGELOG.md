@@ -13,6 +13,51 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.7.0] - 2026-07-29
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Replace an incompatible boot script instead of starting the wrong session
+
+Picking a session and choosing Start could start a completely different
+one. The boot script gained multi-session support in 2.1.0, but
+write_boot_script refuses to overwrite a stub it cannot prove is
+unmodified, and any stub written before 2.1.0 predates the checksum it
+compares against. So upgraded boxes kept the single-session stub, which
+ignores the session name it is passed and starts whatever its own
+~/.config/claude-session.env says. Asking for SimpleVTT started claude
+in ~/work, and the only clue was the session name in the log.
+
+The generated stub now declares the contract it implements
+("stub-version: 4"). A stub on disk that is recognisably ours but
+declares a different version is copied to a .bak file and replaced,
+because keeping it means silently starting the wrong session, which is
+worse than replacing a file. A stub that is not ours still produces a
+.new file and is never touched. start_one repairs a stale stub before
+trusting it, rather than relying on anyone having run install.
+
+When a session fails to appear, any other session that is running is now
+named in the warning -- that is the symptom this bug produced.
+```
+
+</details>
+
+### Fixed
+
+- **Starting a session could start a different one.** The multi-session boot
+  script arrived in 2.1.0, but a stub written before then predates the checksum
+  that guards overwriting, so upgraded boxes silently kept the single-session
+  version — which ignores the session name it is given and starts whatever its
+  own old config names. Asking for one session started another, in the wrong
+  directory. The stub now declares its contract version; one of ours declaring
+  a different version is backed up to `.bak` and replaced rather than used, and
+  `start` repairs a stale stub before trusting it.
+- A session that fails to come up now names any other session that is running,
+  which is exactly what this bug looked like from the outside.
+
 ## [2.6.0] - 2026-07-29
 
 ### Commit message

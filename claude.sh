@@ -30,13 +30,17 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.6.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="2.7.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 readonly CRON_MARKER="# claude-session-boot (managed by claude.sh)"
 # Entries written by the older combined curl.sh, so upgrades replace rather
 # than duplicate them.
 readonly CRON_MARKER_LEGACY="# claude-session-boot (managed by curl.sh)"
 readonly TAB=$'\t'
+# Bump when the generated boot script's contract changes (arguments it accepts,
+# config it reads). An on-disk stub declaring anything else cannot be trusted to
+# start the session we ask it for.
+readonly STUB_VERSION=4
 
 # ------------------------------------------------------------------ plumbing --
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -411,6 +415,10 @@ start_one() {
     [ -n "$dir" ] || { warn "'$name' is not registered — add it with: claude.sh add $name <dir>"; return 1; }
     if session_running "$name"; then skip "'$name' already running"; return 0; fi
     [ -x "$BOOT_SCRIPT" ] || die "boot script missing at $BOOT_SCRIPT — run 'claude.sh install' first."
+    if [ "$(stub_version_of "$BOOT_SCRIPT")" != "$STUB_VERSION" ]; then
+        warn "$BOOT_SCRIPT is from an older version and cannot start a named session — replacing it"
+        write_boot_script
+    fi
     mkdir_for_user "$(dirname "$BOOT_LOG")"
     : >> "$BOOT_LOG" 2>/dev/null || true
     own "$(dirname "$BOOT_LOG")"
@@ -432,7 +440,10 @@ start_one() {
         [ "$mode" != no ] && verify_remote "$name"
         return 0
     fi
+    local appeared
+    appeared="$(running_names | grep -vxF "$name" | tr '\n' ' ')"
     warn "'$name' did not come up — see $BOOT_LOG"
+    [ -n "${appeared// /}" ] && warn "  note: these are running instead: ${appeared% }"
     return 1
 }
 
@@ -739,6 +750,12 @@ install_claude_code() {
 }
 
 # --------------------------------------------------------- session scaffolding --
+# Which contract does the stub on disk implement? Empty means it predates the
+# marker, i.e. the single-session version.
+stub_version_of() {
+    sed -n 's/^# claude-session-boot stub-version: //p' "$1" 2>/dev/null | head -1
+}
+
 write_boot_script() {
     local dest="$BOOT_SCRIPT" tmp
     mkdir_for_user "$(dirname "$dest")"
@@ -747,6 +764,7 @@ write_boot_script() {
 
     cat > "$tmp" <<-'BOOT'
 	#!/usr/bin/env bash
+	# claude-session-boot stub-version: 4
 	#
 	# claude-session-boot.sh — launch Claude Code sessions in detached screens.
 	#
@@ -849,6 +867,18 @@ write_boot_script() {
     elif [ -r "$stamp" ] && [ "$(_stub_sum "$dest")" = "$(cat "$stamp" 2>/dev/null)" ]; then
         install -m 0755 "$tmp" "$dest"; rm -f "$tmp"; _stub_record
         ok "updated $dest (it was unmodified since we wrote it)"
+    elif [ "$(stub_version_of "$dest")" != "$STUB_VERSION" ] && grep -qs 'claude-session-boot' "$dest"; then
+        # One of ours, but an older contract: it ignores the session name we
+        # pass and starts whatever its own config says. Keeping it "safe" would
+        # mean quietly starting the wrong session, so replace it and keep a
+        # copy of whatever was there.
+        local backup="$dest.bak"
+        local n=1; while [ -e "$backup" ]; do backup="$dest.bak.$n"; n=$((n + 1)); done
+        cp -p "$dest" "$backup" 2>/dev/null && own "$backup"
+        install -m 0755 "$tmp" "$dest"; rm -f "$tmp"; _stub_record
+        warn "replaced an incompatible boot script (stub-version '$(stub_version_of "$backup")', wanted $STUB_VERSION)"
+        warn "  the old one ignored the session name and started whatever its own config said"
+        ok "your previous copy is at $backup"
     else
         install -m 0755 "$tmp" "$dest.new"; rm -f "$tmp"
         warn "kept your $dest — newest stub written to $dest.new"
