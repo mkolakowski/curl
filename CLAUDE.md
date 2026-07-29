@@ -32,6 +32,10 @@ follow-up task.
   "`curl.sh` no longer installs Docker unless you select it" beats "refactored
   `install_docker`".
 - Prefix anything that changes existing behaviour with **Breaking:**.
+- **Bump `VERSION` in both scripts in the same commit.** `curl.sh` and
+  `claude.sh` each carry a `readonly VERSION=` near the top and print it on
+  every run, so a stale constant tells the user the wrong thing about the box
+  they are on. It must equal the newest heading in `CHANGELOG.md`.
 - Tagging is optional. If you do tag, the tag is `vX.Y.Z` and matches the
   heading exactly.
 - Purely internal changes with no user-visible effect need no entry, and so no

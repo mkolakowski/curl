@@ -30,6 +30,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
+readonly VERSION="2.6.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 readonly CRON_MARKER="# claude-session-boot (managed by claude.sh)"
 # Entries written by the older combined curl.sh, so upgrades replace rather
@@ -74,6 +75,28 @@ ask_yn() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Printed once per run so it is obvious which version is on the box — these are
+# curled straight off main, so "which one am I running" is a fair question.
+banner() { printf '%s\n' "${C_DIM}claude.sh $VERSION${C_RESET}"; }
+
+VERBOSE="${CLAUDE_SH_VERBOSE:-}"
+vlog() { [ -n "$VERBOSE" ] || return 0; printf '%s\n' "${C_DIM}[$(date +%H:%M:%S)] $*${C_RESET}" >&2; }
+
+# Run something as the target user with a hard ceiling, for probes that must
+# never be able to wedge the script. Long operations (clone, install) use plain
+# as_user instead.
+as_user_t() {
+    local secs="$1"; shift
+    local t0 rc
+    t0=$(date +%s)
+    vlog "as_user(${secs}s): $*"
+    timeout "$secs" bash -c "$(declare -f as_user have); TARGET_USER=$(printf %q "$TARGET_USER"); SUDO=$(printf %q "$SUDO"); as_user $(printf %q "$*")"
+    rc=$?
+    vlog "  -> rc=$rc after $(( $(date +%s) - t0 ))s"
+    [ "$rc" = 124 ] && vlog "  !! timed out after ${secs}s"
+    return $rc
+}
 
 # ---------------------------------------------------------- user / privilege --
 # $SUDO_USER is only meaningful when we are actually root: it then names the
@@ -263,29 +286,38 @@ session_set_remote() {
 # NOT fail when it cannot connect: it quietly starts an ordinary session and
 # shows a notification you never see from a detached screen.
 remote_blockers() {
-    have screen || true
-    if ! as_user 'command -v claude >/dev/null 2>&1'; then
+    local probe api token base bedrock vertex claude_bin
+    vlog "probing the session environment"
+    # One login shell, not six: each as_user is a full `sudo bash -lc`, and on a
+    # slow box six of them back to back looks exactly like a hang.
+    # shellcheck disable=SC2016  # expanded in the session's own login shell
+    probe="$(as_user_t 30 'printf "%s\n" "claude=$(command -v claude 2>/dev/null)" "api=${ANTHROPIC_API_KEY:-}" "token=${CLAUDE_CODE_OAUTH_TOKEN:-}" "base=${ANTHROPIC_BASE_URL:-}" "bedrock=${CLAUDE_CODE_USE_BEDROCK:-}" "vertex=${CLAUDE_CODE_USE_VERTEX:-}"')"
+    claude_bin="$(printf '%s\n' "$probe" | sed -n 's/^claude=//p')"
+    api="$(printf '%s\n'    "$probe" | sed -n 's/^api=//p')"
+    token="$(printf '%s\n'  "$probe" | sed -n 's/^token=//p')"
+    base="$(printf '%s\n'   "$probe" | sed -n 's/^base=//p')"
+    bedrock="$(printf '%s\n' "$probe" | sed -n 's/^bedrock=//p')"
+    vertex="$(printf '%s\n' "$probe" | sed -n 's/^vertex=//p')"
+
+    if [ -z "$claude_bin" ]; then
         printf '%s\n' "Claude Code is not installed"
         return 0
     fi
-    # `claude auth status` exits 0 only when signed in.
-    if ! as_user 'timeout 20 claude auth status >/dev/null 2>&1'; then
+    vlog "claude at $claude_bin; checking claude.ai login"
+    if ! as_user_t 25 'claude auth status >/dev/null 2>&1'; then
         printf '%s\n' "not signed in to claude.ai — run: claude auth login"
     fi
-    local v
-    for v in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
-        as_user "[ -n \"\${$v:-}\" ]" 2>/dev/null && printf '%s\n' "$v is set in the session environment; Remote Control needs a claude.ai login and refuses tokens"
-    done
-    # shellcheck disable=SC2016  # evaluated in the session's own shell, not here
-    as_user '[ -n "${ANTHROPIC_BASE_URL:-}" ]' 2>/dev/null && printf '%s\n' "ANTHROPIC_BASE_URL is set; Remote Control only works against api.anthropic.com"
-    for v in CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX; do
-        as_user "[ -n \"\${$v:-}\" ]" 2>/dev/null && printf '%s\n' "$v is set; Remote Control is not available on that provider"
-    done
+    [ -n "$api" ]     && printf '%s\n' "ANTHROPIC_API_KEY is set; Remote Control needs a claude.ai login and refuses keys"
+    [ -n "$token" ]   && printf '%s\n' "CLAUDE_CODE_OAUTH_TOKEN is set; Remote Control needs a full claude.ai login"
+    [ -n "$base" ]    && printf '%s\n' "ANTHROPIC_BASE_URL is set ($base); Remote Control only works against api.anthropic.com"
+    [ -n "$bedrock" ] && printf '%s\n' "CLAUDE_CODE_USE_BEDROCK is set; Remote Control is not available on that provider"
+    [ -n "$vertex" ]  && printf '%s\n' "CLAUDE_CODE_USE_VERTEX is set; Remote Control is not available on that provider"
     return 0
 }
 
 remote_preflight() {
     local blockers
+    say "Checking Remote Control preconditions${C_DIM} (a few seconds)${C_RESET}"
     blockers="$(remote_blockers)"
     if [ -z "$blockers" ]; then
         skip "remote control preconditions look fine"
@@ -300,7 +332,7 @@ remote_preflight() {
 # is the only way to see a Remote Control failure notice without attaching.
 session_screen_dump() {
     local name="$1" tmp="/tmp/claude-session-$$.dump"
-    as_user "screen -S $(printf %q "$name") -X hardcopy $(printf %q "$tmp")" >/dev/null 2>&1
+    as_user_t 15 "screen -S $(printf %q "$name") -X hardcopy $(printf %q "$tmp")" >/dev/null 2>&1
     sleep 0.5
     [ -r "$tmp" ] && { sed '/^[[:space:]]*$/d' "$tmp"; rm -f "$tmp"; }
 }
@@ -308,6 +340,8 @@ session_screen_dump() {
 # After starting a remote session, say whether it really connected.
 verify_remote() {
     local name="$1" dump
+    say "Waiting for Remote Control to connect${C_DIM} (a few seconds)${C_RESET}"
+    vlog "sleeping 4s before reading the session screen"
     sleep 4
     dump="$(session_screen_dump "$name")"
     if printf '%s' "$dump" | grep -qi 'claude\.ai/code\|remote control session\|session url'; then
@@ -389,7 +423,9 @@ start_one() {
     if [ "$mode" != no ]; then
         remote_preflight || warn "starting anyway — fix the above and restart '$name'"
     fi
+    vlog "running $BOOT_SCRIPT $name"
     as_user "CLAUDE_CMD=$(printf %q "$CLAUDE_CMD") $(printf %q "$BOOT_SCRIPT") $(printf %q "$name")" 2>&1 | tee -a "$BOOT_LOG"
+    vlog "boot script returned; waiting for the session to appear"
     sleep 1
     if session_running "$name"; then
         ok "'$name' is up"
@@ -473,14 +509,19 @@ manage_one() {
     rem="$(session_remote "$name")"
     printf '\n%s  %s\n' "${C_BOLD}$name${C_RESET}" "${C_DIM}$(session_dir "$name")${C_RESET}"
     if session_running "$name"; then printf '  %s\n' "$(session_line_of "$name")"; else printf '  %s\n' "not running"; fi
-    printf '  remote control: %s\n\n' "$([ "$rem" = yes ] && echo on || echo off)"
+    case "$rem" in
+        server)      printf '  remote control: %s\n\n' "on (server mode)" ;;
+        interactive) printf '  remote control: %s\n\n' "on (interactive)" ;;
+        *)           printf '  remote control: %s\n\n' "off" ;;
+    esac
     cat <<-MENU
 	  1) Enter    attach to this session
 	  2) Restart  stop it and start a fresh one
 	  3) Stop     stop it
 	  4) Start    start it
-	  5) Remote   turn remote control $([ "$rem" = yes ] && echo off || echo on)
-	  6) Back
+	  5) Remote   $([ "$rem" = no ] && echo "turn remote control on (server mode)" || echo "turn remote control off")
+	  6) Mode     switch between server and interactive remote control
+	  7) Back
 	MENU
     choice="$(ask "Choice [1]: " 1)"
     printf '\n'
@@ -489,8 +530,10 @@ manage_one() {
         2|r|restart)  restart_one "$name" ;;
         3|s|stop)     stop_one "$name" ;;
         4|start)      start_one "$name" ;;
-        5|remote)     if [ "$rem" = yes ]; then session_set_remote "$name" off; else session_set_remote "$name" on; fi ;;
-        6|b|back|q)   return 0 ;;
+        5|remote)     if [ "$rem" = no ]; then session_set_remote "$name" on; else session_set_remote "$name" off; fi ;;
+        6|mode)       if [ "$rem" = interactive ]; then session_set_remote "$name" on
+                      else session_set_remote "$name" interactive; fi ;;
+        7|b|back|q)   return 0 ;;
         *)            warn "unrecognised choice '$choice'" ;;
     esac
 }
@@ -675,7 +718,7 @@ apt_ensure() {
 
 install_claude_code() {
     if as_user 'command -v claude >/dev/null 2>&1'; then
-        skip "claude code already installed ($(as_user 'timeout 10 claude --version' 2>/dev/null | head -1))"
+        skip "claude code already installed ($(as_user_t 15 'claude --version' 2>/dev/null | head -1))"
         return 0
     fi
     say "Installing Claude Code"
@@ -880,7 +923,7 @@ status() {
     printf '  %-14s %s\n' 'boot script' "$BOOT_SCRIPT $([ -x "$BOOT_SCRIPT" ] || echo '(missing)')"
     printf '  %-14s %s\n' 'boot log'    "$BOOT_LOG"
     printf '  %-14s %s\n' 'crontab'     "$(crontab_get | grep -F -e "$CRON_MARKER" -e "$CRON_MARKER_LEGACY" || echo '(no @reboot entry)')"
-    printf '  %-14s %s\n' 'claude'      "$(as_user 'timeout 10 claude --version' 2>/dev/null | head -1 || echo 'not installed')"
+    printf '  %-14s %s\n' 'claude'      "$(as_user_t 15 'claude --version' 2>/dev/null | head -1 || echo 'not installed')"
     if sessions_read | awk -F'\t' '$4 != "no" { found = 1 } END { exit !found }'; then
         printf '  %-14s %s\n' 'remote' "some sessions use Remote Control — see claude.ai/code"
         [ -n "${ANTHROPIC_API_KEY:-}" ] && warn "ANTHROPIC_API_KEY is set; Remote Control will refuse it"
@@ -893,8 +936,8 @@ doctor() {
     printf '%s\n\n' "${C_BOLD}claude.sh doctor${C_RESET}"
 
     printf '  %-22s %s\n' 'user'    "$TARGET_USER ($TARGET_HOME)"
-    printf '  %-22s %s\n' 'claude'  "$(as_user 'timeout 10 claude --version' 2>/dev/null | head -1 || echo 'not installed')"
-    if as_user 'timeout 20 claude auth status >/dev/null 2>&1'; then
+    printf '  %-22s %s\n' 'claude'  "$(as_user_t 15 'claude --version' 2>/dev/null | head -1 || echo 'not installed')"
+    if as_user_t 25 'claude auth status >/dev/null 2>&1'; then
         printf '  %-22s %s\n' 'claude.ai login' "${C_GREEN}signed in${C_RESET}"
     else
         printf '  %-22s %s\n' 'claude.ai login' "${C_RED}not signed in${C_RESET}  (run: claude auth login)"
@@ -915,7 +958,7 @@ doctor() {
         printf '%s\n' "$blockers" | sed "s/^/    ${C_RED}x${C_RESET} /"
     fi
     printf '\n  %s\n' "${C_DIM}claude doctor says:${C_RESET}"
-    as_user 'timeout 30 claude doctor' 2>&1 | grep -iE 'remote|login|auth|version' | head -8 | sed 's/^/    /' \
+    as_user_t 40 'claude doctor' 2>&1 | grep -iE 'remote|login|auth|version' | head -8 | sed 's/^/    /' \
         || printf '    %s\n' "(claude doctor produced nothing)"
 
     printf '\n  %s\n' "${C_BOLD}Sessions${C_RESET}"
@@ -947,7 +990,7 @@ uninstall() {
 
 usage() {
     cat <<-USAGE
-	${C_BOLD}claude.sh${C_RESET} — run Claude Code headlessly in detached screen sessions
+	${C_BOLD}claude.sh${C_RESET} $VERSION — run Claude Code headlessly in detached screen sessions
 
 	  bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/claude.sh) [command]
 
@@ -973,6 +1016,8 @@ usage() {
 	  status                    table plus registry, cron and Claude Code state
 	  doctor [name]             why a remote session is not connecting
 	  uninstall                 remove the boot script and @reboot entry
+	  version                   print the version and exit
+	  -v, --verbose             trace what the script is doing, with timings
 	  help                      this text
 
 	${C_BOLD}Registry${C_RESET}  $SESSIONS_CONF
@@ -991,6 +1036,7 @@ usage() {
 	  CLAUDE_CMD                launch command (now: $CLAUDE_CMD)
 	  ASSUME_YES=1              never prompt, take the defaults
 	  NO_COLOR=1                plain output
+	  CLAUDE_SH_VERBOSE=1       same as --verbose
 
 	For Docker, Tailscale, btop and friends, use curl.sh in the same repo.
 	  $REPO_URL
@@ -1029,8 +1075,24 @@ cmd_add() {
 }
 
 main() {
+    # -v / --verbose may appear anywhere; strip it before dispatch.
+    local a args=()
+    for a in "$@"; do
+        case "$a" in
+            -v|--verbose) VERBOSE=1 ;;
+            *) args+=("$a") ;;
+        esac
+    done
+    set -- ${args+"${args[@]}"}
+
+    local cmd="${1:-}"
+    case "$cmd" in
+        version|--version|-V) printf '%s\n' "$VERSION"; return 0 ;;
+    esac
+    banner
+    [ -n "$VERBOSE" ] && vlog "verbose on · user=$TARGET_USER home=$TARGET_HOME registry=$SESSIONS_CONF"
     migrate_legacy_config
-    local cmd="${1:-}"; [ $# -gt 0 ] && shift
+    [ $# -gt 0 ] && shift
     case "$cmd" in
         ''|default)
             if [ "$(session_count)" -eq 0 ] && [ ! -x "$BOOT_SCRIPT" ]; then

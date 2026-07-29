@@ -19,6 +19,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
+readonly VERSION="2.6.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 RAW_BASE="${CURL_SH_RAW_BASE:-https://raw.githubusercontent.com/mkolakowski/curl/main}"
 
@@ -49,6 +50,10 @@ ask() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Printed once per run so it is obvious which version is on the box — these are
+# curled straight off main, so "which one am I running" is a fair question.
+banner() { printf '%s\n' "${C_DIM}curl.sh $VERSION${C_RESET}"; }
 
 # ---------------------------------------------------------- user / privilege --
 # $SUDO_USER is only meaningful when we are actually root: it then names the
@@ -422,7 +427,7 @@ list_catalog() {
 
 usage() {
     cat <<-USAGE
-	${C_BOLD}curl.sh${C_RESET} — pick the tools you want on an Ubuntu box and install them
+	${C_BOLD}curl.sh${C_RESET} $VERSION — pick the tools you want on an Ubuntu box and install them
 
 	  bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) [command]
 
@@ -434,6 +439,7 @@ usage() {
 	  list                show the catalog and what is already installed
 	  update              apt update + full-upgrade only
 	  reboot              reboot the machine
+	  version             print the version and exit
 	  help                this text
 
 	${C_BOLD}Entries${C_RESET}
@@ -451,6 +457,10 @@ usage() {
 }
 
 main() {
+    case "${1:-}" in
+        version|--version|-V) printf '%s\n' "$VERSION"; return 0 ;;
+    esac
+    banner
     case "${1:-}" in
         '')
             picker && run_selection ;;

@@ -256,6 +256,7 @@ idempotent — a session already up is left alone rather than started twice.
 | `enter [name]` | attach; the name may be omitted if only one is running |
 | `remote <name> on\|interactive\|off` | Remote Control: server mode, interactive, or off |
 | `doctor [name]` | why a remote session is not connecting |
+| `-v`, `--verbose` | trace each step with timings, to pin down a stall |
 | `status` | table plus registry, cron and Claude Code state |
 | `uninstall` | remove the boot script and `@reboot` entry (leaves packages) |
 | `help` | usage |

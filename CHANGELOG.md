@@ -13,6 +13,95 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.6.0] - 2026-07-29
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Add --verbose, and stop a wedged probe from hanging the script
+
+Starting a remote session went silent for up to a minute. The cause was
+remote_blockers: it opened six separate "sudo bash -lc" login shells to
+read one environment variable each, then ran claude auth status, and
+printed nothing until all of it finished. On a slow box that is
+indistinguishable from a hang.
+
+The environment is now read in a single login shell, every probe runs
+under a hard timeout so nothing can wedge indefinitely, and the script
+says what it is waiting for before it waits.
+
+-v / --verbose (or CLAUDE_SH_VERBOSE=1) traces each step with a
+timestamp, the command being run as the target user, its exit code and
+how long it took, so a stall can be pinned to one call rather than
+guessed at.
+
+Also fixes the session menu reporting "remote control: off" for a
+session the table showed as server. The remote flag became three-valued
+in 2.4.0 -- no, server, interactive -- but manage_one still compared it
+against the old "yes", so every session read as off and option 5 toggled
+from the wrong starting point. The menu now shows the real mode and
+gains a Mode entry to switch between server and interactive.
+```
+
+</details>
+
+### Added
+
+- `-v` / `--verbose` (or `CLAUDE_SH_VERBOSE=1`) traces each step with a
+  timestamp, the command run as the target user, its exit code and elapsed
+  time. The flag may appear anywhere in the arguments.
+- The script now says what it is waiting for before checking Remote Control
+  preconditions and before reading a session's screen, so neither step is a
+  silent pause.
+- The session menu gained **Mode**, to switch a session between server-mode and
+  interactive Remote Control without turning it off first.
+
+### Fixed
+
+- The session menu reported `remote control: off` for a session the table
+  showed as `server`. The flag became three-valued in 2.4.0 but the menu still
+  compared it against the old `yes`, so every session read as off and the
+  toggle started from the wrong state.
+- Starting a remote session could sit silent for close to a minute. The
+  environment probe opened six separate login shells one after another; it now
+  uses one. Every probe also runs under a hard timeout, so a wedged
+  `claude auth status` costs 25 seconds instead of hanging indefinitely.
+
+## [2.5.0] - 2026-07-28
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Print the version on every run
+
+Both scripts are curled straight off main, so the version on a given box
+is whatever was there when it was last run, and there was no way to ask.
+Each now carries a VERSION constant and prints "curl.sh 2.5.0" as its
+first line, with "version" (also -V, --version) printing the bare number
+alone for scripting.
+
+CLAUDE.md now requires bumping VERSION in both scripts in the same
+commit as the changelog entry, since a stale constant reports the wrong
+thing about the box it is running on.
+```
+
+</details>
+
+### Added
+
+- Both scripts print their version as the first line of every run, and accept
+  `version`, `-V` or `--version` to print the bare number on its own for
+  scripting.
+
+### Changed
+
+- `CLAUDE.md` now requires `VERSION` in both scripts to be bumped in the same
+  commit as the changelog entry, and to match the newest heading.
+
 ## [2.4.0] - 2026-07-28
 
 ### Commit message
