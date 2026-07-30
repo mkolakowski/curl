@@ -13,6 +13,61 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.10.0] - 2026-07-30
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Add a docker containers submenu: cloudflared, beszel-agent, dockge
+
+Pressing d in the package checklist opens a second checklist of
+container stacks, with the same toggle-by-number picker. Also reachable
+as "curl.sh containers", or "curl.sh containers dockge" to skip the menu.
+
+Each entry is written as a compose stack under /opt/stacks/<name>, which
+is the directory Dockge itself manages -- so anything installed this way
+turns up in Dockge ready to edit, start and stop, rather than being an
+opaque docker run nobody can later reconstruct. CURL_SH_STACKS_DIR moves
+them. Docker is installed first if it is missing.
+
+cloudflared needs a tunnel token and beszel-agent needs a hub URL, token
+and key. Those are asked for and written to a chmod 600 .env beside the
+compose file, so no secret ends up in the compose file or in shell
+history. An empty answer is allowed: the stack is written with
+REPLACE_ME, left stopped, and the script names the file to finish. A
+.env already filled in is not asked about again.
+
+Also fixes an infinite loop in both pickers: with ASSUME_YES set or no
+terminal, ask() returns the default immediately, nothing is ever
+selected, and the confirm branch looped forever. Both now say what to
+name instead and exit.
+```
+
+</details>
+
+### Added
+
+- A **docker containers** submenu, reached with `d` from the package checklist
+  or as `curl.sh containers`: `cloudflared`, `beszel-agent` and `dockge`, with
+  the same toggle-by-number picker and a state column showing what is already
+  running. `curl.sh containers <name>...` skips the menu.
+- Each container is written as a compose stack under `/opt/stacks/<name>/`, the
+  directory Dockge manages, so installs show up in Dockge ready to edit and
+  control. `CURL_SH_STACKS_DIR` relocates them. Docker is installed first if
+  missing.
+- Stacks needing a secret prompt for it and write a `chmod 600` `.env` beside
+  the compose file. Skipping leaves `REPLACE_ME` and the stack stopped, with the
+  file named; a `.env` already complete is not asked about again.
+
+### Fixed
+
+- Both pickers looped forever when run with `ASSUME_YES=1` or without a
+  terminal: `ask` returned the default immediately, so nothing was ever selected
+  and the confirm branch repeated. They now explain what to name and exit.
+- A failed `docker compose up -d` prints the reason instead of discarding it.
+
 ## [2.9.0] - 2026-07-30
 
 ### Commit message

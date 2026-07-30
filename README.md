@@ -32,7 +32,7 @@ box. Type numbers to toggle things on, hit Enter, and it installs them.
   [x] 8   purplemux   no            web terminal multiplexer for Claude Code
   [ ] 9   claude      no            Claude Code + boot session (runs claude.sh)
 
-  numbers toggle · a=all · m=missing only · n=none · q=quit
+  numbers toggle · a=all · m=missing only · n=none · d=docker containers · q=quit
 Install [Enter to confirm]:
 ```
 
@@ -58,6 +58,34 @@ that needs `tmux` and Node.js 20+, and Ubuntu ships an older `nodejs` than that,
 so the entry installs `tmux` from apt and Node from NodeSource when what the box
 has is too old. Node already at 20 or newer is left alone. Start it with
 `purplemux` and open `http://localhost:8022`.
+
+### Docker containers
+
+`d` in the checklist opens a submenu for container stacks, with the same
+toggle-by-number picker:
+
+```
+      #   container      state     what it is
+  ------------------------------------------------------------------------
+  [x] 1   cloudflared    -         Cloudflare Tunnel connector
+  [ ] 2   beszel-agent   running   Beszel monitoring agent (reports to a hub)
+  [x] 3   dockge         -         web UI for docker compose stacks, on port 5001
+```
+
+Each one is written as a compose stack under `/opt/stacks/<name>/` — the same
+directory Dockge manages, so anything installed this way appears in Dockge ready
+to edit, start and stop. Set `CURL_SH_STACKS_DIR` to put them elsewhere.
+
+Stacks that need a secret ask for it and write a `chmod 600` `.env` beside the
+compose file, so nothing sensitive lands in the compose file or your shell
+history. Press Enter to skip: the stack is written with `REPLACE_ME` and left
+stopped, and the script tells you which file to finish. Docker itself is
+installed first if it isn't already there.
+
+```
+bash <(curl -Ss .../curl.sh) containers            # the checklist
+bash <(curl -Ss .../curl.sh) containers dockge     # straight to one
+```
 
 Three things need a human afterwards and the script says so at the time: `sudo
 tailscale up` to join your tailnet, `gh auth login` to sign the GitHub CLI in,

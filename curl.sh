@@ -19,7 +19,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.9.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="2.10.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 RAW_BASE="${CURL_SH_RAW_BASE:-https://raw.githubusercontent.com/mkolakowski/curl/main}"
 
@@ -367,6 +367,253 @@ install_claude() {
     fi
 }
 
+
+# ------------------------------------------------------- docker containers --
+# Each entry is a compose stack under $STACKS_DIR/<name>, which is also the
+# directory Dockge manages — so anything installed here shows up in Dockge ready
+# to edit, start and stop.
+STACKS_DIR="${CURL_SH_STACKS_DIR:-/opt/stacks}"
+
+DC_KEYS=(cloudflared beszel-agent dockge)
+DC_BLURB=(
+    "Cloudflare Tunnel connector"
+    "Beszel monitoring agent (reports to a Beszel hub)"
+    "web UI for docker compose stacks, on port 5001"
+)
+
+# Secrets each stack needs: VAR|prompt|required(yes/no)
+dc_secrets() {
+    case "$1" in
+        cloudflared)
+            printf '%s\n' "TUNNEL_TOKEN|Tunnel token (Zero Trust dashboard -> Networks -> Tunnels)|yes" ;;
+        beszel-agent)
+            printf '%s\n' \
+                "BESZEL_HUB_URL|Beszel hub URL (e.g. http://192.168.1.10:8090)|yes" \
+                "BESZEL_TOKEN|Agent token (hub -> Add System, or Settings -> Tokens)|yes" \
+                "BESZEL_KEY|Agent public key (shown alongside the token)|yes" ;;
+        *) : ;;
+    esac
+}
+
+dc_dir() { printf '%s\n' "$STACKS_DIR/$1"; }
+
+dc_state() {
+    have docker || { printf '%s' '-'; return; }
+    local names
+    names="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null)"
+    if printf '%s\n' "$names" | grep -qx "$1"; then printf '%s' 'running'; return; fi
+    names="$($SUDO docker ps -a --format '{{.Names}}' 2>/dev/null)"
+    if printf '%s\n' "$names" | grep -qx "$1"; then printf '%s' 'stopped'; return; fi
+    [ -r "$(dc_dir "$1")/docker-compose.yml" ] && { printf '%s' 'written'; return; }
+    printf '%s' '-'
+}
+
+dc_compose_for() {
+    local name="$1" uid gid
+    uid="$(id -u "$TARGET_USER" 2>/dev/null || echo 1000)"
+    gid="$(id -g "$TARGET_USER" 2>/dev/null || echo 1000)"
+    case "$name" in
+        cloudflared) cat <<-'YAML'
+	services:
+	  cloudflared:
+	    image: cloudflare/cloudflared:latest
+	    container_name: cloudflared
+	    restart: unless-stopped
+	    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+	YAML
+            ;;
+        beszel-agent) cat <<-'YAML'
+	services:
+	  beszel-agent:
+	    image: henrygd/beszel-agent:latest
+	    container_name: beszel-agent
+	    restart: unless-stopped
+	    network_mode: host
+	    volumes:
+	      - ./beszel_agent_data:/var/lib/beszel-agent
+	      - /var/run/docker.sock:/var/run/docker.sock:ro
+	    environment:
+	      LISTEN: ${BESZEL_LISTEN:-45876}
+	      HUB_URL: ${BESZEL_HUB_URL}
+	      TOKEN: ${BESZEL_TOKEN}
+	      KEY: ${BESZEL_KEY}
+	YAML
+            ;;
+        dockge) cat <<-YAML
+	services:
+	  dockge:
+	    image: louislam/dockge:1
+	    container_name: dockge
+	    restart: unless-stopped
+	    ports:
+	      - 5001:5001
+	    volumes:
+	      - /var/run/docker.sock:/var/run/docker.sock
+	      - ./data:/app/data
+	      - $STACKS_DIR:$STACKS_DIR
+	    environment:
+	      - DOCKGE_STACKS_DIR=$STACKS_DIR
+	      - PUID=$uid
+	      - PGID=$gid
+	YAML
+            ;;
+    esac
+}
+
+# Ask for whatever the stack needs and write it beside the compose file. An
+# empty answer is allowed: the stack is written but not started, so you can fill
+# the file in later rather than being forced to have the value to hand.
+dc_write_env() {
+    local name="$1" dir="$2" var prompt required missing=0 val
+    local tmp; tmp="$(mktemp)"
+    printf '# %s — read by docker compose from this directory.\n' "$name" > "$tmp"
+    while IFS='|' read -r var prompt required; do
+        [ -n "$var" ] || continue
+        val="$(ask "    $prompt: " '')"
+        if [ -z "$val" ] && [ "$required" = yes ]; then
+            missing=1
+            printf '%s=REPLACE_ME\n' "$var" >> "$tmp"
+        else
+            printf '%s=%s\n' "$var" "$val" >> "$tmp"
+        fi
+    done < <(dc_secrets "$name")
+    $SUDO install -m 0600 "$tmp" "$dir/.env"
+    rm -f "$tmp"
+    $SUDO chown "$TARGET_USER" "$dir/.env" 2>/dev/null
+    return $missing
+}
+
+dc_compose_cmd() {
+    if $SUDO docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'
+    elif have docker-compose; then printf '%s' 'docker-compose'
+    else printf '%s' ''; fi
+}
+
+dc_install() {
+    local name="$1" dir cc rc=0
+    dir="$(dc_dir "$name")"
+
+    if ! have docker; then
+        warn "docker is not installed — installing it first"
+        install_docker || { warn "cannot continue without docker"; return 1; }
+    fi
+    cc="$(dc_compose_cmd)"
+    [ -n "$cc" ] || { warn "no docker compose available"; return 1; }
+
+    say "Setting up $name in $dir"
+    $SUDO mkdir -p "$dir"
+    $SUDO chown "$TARGET_USER" "$dir" 2>/dev/null
+
+    local tmp; tmp="$(mktemp)"
+    dc_compose_for "$name" > "$tmp"
+    if [ -r "$dir/docker-compose.yml" ] && ! cmp -s "$tmp" "$dir/docker-compose.yml"; then
+        $SUDO cp -p "$dir/docker-compose.yml" "$dir/docker-compose.yml.bak"
+        warn "kept your previous compose file as docker-compose.yml.bak"
+    fi
+    $SUDO install -m 0644 "$tmp" "$dir/docker-compose.yml"
+    rm -f "$tmp"
+    $SUDO chown "$TARGET_USER" "$dir/docker-compose.yml" 2>/dev/null
+    ok "wrote $dir/docker-compose.yml"
+
+    if [ -n "$(dc_secrets "$name")" ]; then
+        if [ -r "$dir/.env" ] && ! grep -q 'REPLACE_ME' "$dir/.env" 2>/dev/null; then
+            skip "$dir/.env already filled in"
+        else
+            say "  $name needs a few values (press Enter to skip and fill them in later)"
+            if ! dc_write_env "$name" "$dir"; then
+                warn "left REPLACE_ME in $dir/.env — not starting $name"
+                skip "fill it in, then: cd $dir && $cc up -d"
+                return 0
+            fi
+            ok "wrote $dir/.env"
+        fi
+    fi
+
+    say "Starting $name"
+    local out
+    # shellcheck disable=SC2086  # $cc is "docker compose", two words on purpose
+    if out="$( cd "$dir" && $SUDO $cc up -d 2>&1 )"; then
+        ok "$name is up"
+        [ "$name" = dockge ] && skip "open http://localhost:5001"
+    else
+        warn "$cc up -d failed:"
+        printf '%s\n' "$out" | tail -4 | sed 's/^/         /' >&2
+        skip "retry by hand: cd $dir && $cc up -d"
+        rc=1
+    fi
+    return $rc
+}
+
+dc_print_catalog() {
+    local i key st pad mark
+    printf '\n  %-3s %-3s %-14s %-9s %s\n' '' '#' 'container' 'state' 'what it is'
+    printf '  %s\n' "$(printf '%.0s-' {1..72})"
+    for i in "${!DC_KEYS[@]}"; do
+        key="${DC_KEYS[i]}"
+        st="$(dc_state "$key")"
+        printf -v pad '%-9s' "$st"
+        case "$st" in
+            running) pad="${C_GREEN}${pad}${C_RESET}" ;;
+            stopped|written) pad="${C_YELLOW}${pad}${C_RESET}" ;;
+            *) pad="${C_DIM}${pad}${C_RESET}" ;;
+        esac
+        [ "${DC_SELECTED[i]:-0}" = 1 ] && mark="${C_GREEN}[x]${C_RESET}" || mark='[ ]'
+        printf '  %b %-3s %-14s %b %s\n' "$mark" "$((i + 1))" "$key" "$pad" "${C_DIM}${DC_BLURB[i]}${C_RESET}"
+    done
+    printf '\n'
+}
+
+declare -a DC_SELECTED
+dc_reset() { local i; for i in "${!DC_KEYS[@]}"; do DC_SELECTED[i]=0; done; }
+
+dc_index() {
+    local want="$1" i
+    for i in "${!DC_KEYS[@]}"; do
+        [ "${DC_KEYS[i]}" = "$want" ] && { printf '%s' "$i"; return 0; }
+    done
+    return 1
+}
+
+docker_menu() {
+    if [ -n "${ASSUME_YES:-}" ] || [ ! -r /dev/tty ]; then
+        warn "not interactive — name what you want, e.g. curl.sh containers dockge"
+        return 1
+    fi
+    dc_reset
+    local input tok idx count
+    while true; do
+        printf '%s' "${C_BOLD}Docker containers${C_RESET}"
+        dc_print_catalog
+        printf '  %s\n' "${C_DIM}stacks live in $STACKS_DIR · numbers toggle · a=all · n=none · q=back${C_RESET}"
+        input="$(ask "Install [Enter to confirm]: " '')"
+        case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
+            q|quit|back) return 0 ;;
+            a|all)  for idx in "${!DC_KEYS[@]}"; do DC_SELECTED[idx]=1; done; continue ;;
+            n|none) dc_reset; continue ;;
+            '')
+                count=0
+                for idx in "${!DC_KEYS[@]}"; do [ "${DC_SELECTED[idx]}" = 1 ] && count=$((count + 1)); done
+                if [ "$count" -eq 0 ]; then warn "nothing selected — pick some numbers, or q to go back"; continue; fi
+                require_sudo
+                for idx in "${!DC_KEYS[@]}"; do
+                    [ "${DC_SELECTED[idx]}" = 1 ] || continue
+                    printf '\n'; dc_install "${DC_KEYS[idx]}"
+                done
+                printf '\n'; dc_reset; continue ;;
+        esac
+        for tok in $(printf '%s' "$input" | tr ',' ' '); do
+            if printf '%s' "$tok" | grep -qE '^[0-9]+$'; then
+                idx=$((tok - 1))
+                if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#DC_KEYS[@]}" ]; then
+                    [ "${DC_SELECTED[idx]}" = 1 ] && DC_SELECTED[idx]=0 || DC_SELECTED[idx]=1
+                else warn "no entry numbered $tok"; fi
+            elif idx="$(dc_index "$tok")"; then
+                [ "${DC_SELECTED[idx]}" = 1 ] && DC_SELECTED[idx]=0 || DC_SELECTED[idx]=1
+            else warn "unknown container '$tok'"; fi
+        done
+    done
+}
+
 # ---------------------------------------------------------------- the picker --
 # SELECTED[i] is 1 when entry i is chosen.
 declare -a SELECTED
@@ -405,16 +652,23 @@ print_catalog() {
 }
 
 picker() {
+    # Without a terminal, ask() returns the default forever and this loop would
+    # never terminate. Name what you want instead.
+    if [ -n "${ASSUME_YES:-}" ] || [ ! -r /dev/tty ]; then
+        warn "not interactive — name what you want, e.g. curl.sh install git docker"
+        return 1
+    fi
     selection_reset
     local input tok idx count=0
 
     while true; do
         print_catalog
-        printf '  %s\n' "${C_DIM}numbers toggle · a=all · m=missing only · n=none · q=quit${C_RESET}"
+        printf '  %s\n' "${C_DIM}numbers toggle · a=all · m=missing only · n=none · d=docker containers · q=quit${C_RESET}"
         input="$(ask "Install [Enter to confirm]: " '')"
 
         case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
             q|quit|exit) say "Nothing changed."; return 1 ;;
+            d|docker|containers) docker_menu; continue ;;
             a|all)  for idx in "${!PKG_KEYS[@]}"; do SELECTED[idx]=1; done; continue ;;
             n|none) selection_reset; continue ;;
             m|missing)
@@ -512,6 +766,9 @@ usage() {
 	  install all         install everything
 	  install missing     install whatever is not there yet
 	  list                show the catalog and what is already installed
+	  containers [name...]
+	                      docker container stacks: cloudflared, beszel-agent,
+	                      dockge. With no name, opens the checklist.
 	  update              apt update + full-upgrade only
 	  reboot              reboot the machine
 	  version             print the version and exit
@@ -521,6 +778,7 @@ usage() {
 	  ${PKG_KEYS[*]}
 
 	${C_BOLD}Environment${C_RESET}
+	  CURL_SH_STACKS_DIR  where compose stacks are written (now: $STACKS_DIR)
 	  ASSUME_YES=1        never prompt, take the defaults
 	  NO_COLOR=1          plain output
 
@@ -545,6 +803,18 @@ main() {
             select_by_name "$@"
             run_selection ;;
         list|ls)        list_catalog ;;
+        containers|docker-containers)
+            shift 2>/dev/null || true
+            if [ $# -gt 0 ]; then
+                require_sudo
+                local c rc=0
+                for c in "$@"; do
+                    if dc_index "$c" >/dev/null; then dc_install "$c" || rc=1
+                    else die "unknown container '$c'. Try: curl.sh containers"; fi
+                done
+                return $rc
+            fi
+            docker_menu ;;
         update)         require_sudo; install_update ;;
         reboot)         say "Rebooting…"; $SUDO reboot ;;
         help|-h|--help) usage ;;
