@@ -24,11 +24,13 @@ box. Type numbers to toggle things on, hit Enter, and it installs them.
   ------------------------------------------------------------------------
   [ ] 1   update      -             apt update && apt full-upgrade
   [x] 2   git         2.43.0        version control
-  [ ] 3   screen      4.09.01       detachable terminal sessions
-  [x] 4   btop        no            resource monitor
-  [x] 5   docker      no            Docker Engine + Compose plugin
-  [ ] 6   tailscale   no            mesh VPN
-  [ ] 7   claude      no            Claude Code + boot session (runs claude.sh)
+  [x] 3   gh          no            GitHub CLI
+  [ ] 4   screen      4.09.01       detachable terminal sessions
+  [x] 5   btop        no            resource monitor
+  [x] 6   docker      no            Docker Engine + Compose plugin
+  [ ] 7   tailscale   no            mesh VPN
+  [x] 8   purplemux   no            web terminal multiplexer for Claude Code
+  [ ] 9   claude      no            Claude Code + boot session (runs claude.sh)
 
   numbers toggle · a=all · m=missing only · n=none · q=quit
 Install [Enter to confirm]:
@@ -49,6 +51,13 @@ bash <(curl -Ss .../curl.sh) list
 Everything is idempotent — anything already present is reported and skipped, so
 re-running costs nothing. Installs happen in catalog order, so the system update
 runs first and `git` lands before anything that wants it.
+
+Picking `purplemux` brings its prerequisites with it. It is a
+[web-native terminal multiplexer for Claude Code](https://github.com/subicura/purplemux)
+that needs `tmux` and Node.js 20+, and Ubuntu ships an older `nodejs` than that,
+so the entry installs `tmux` from apt and Node from NodeSource when what the box
+has is too old. Node already at 20 or newer is left alone. Start it with
+`purplemux` and open `http://localhost:8022`.
 
 Three things need a human afterwards and the script says so at the time: `sudo
 tailscale up` to join your tailnet, `gh auth login` to sign the GitHub CLI in,
@@ -235,6 +244,12 @@ overwritten and you get a `.new` file alongside instead.
 #   docker compose -f "$HOME/work/compose.yaml" up -d
 # ---8<--- EDIT ABOVE ---8<---
 ```
+
+Each session's own output is captured to
+`~/.local/state/claude-sessions/<name>.log`, so a session that exits immediately
+still leaves the reason behind — that is where a failed start gets its
+explanation from. `screen` is started from the session's work directory, so a new
+window inside it (<kbd>Ctrl-a</kbd> <kbd>c</kbd>) opens there too.
 
 A `@reboot` crontab entry runs it on every boot, logging to
 `~/.local/state/claude-session-boot.log`. Both the script and the stub are

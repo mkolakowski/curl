@@ -19,7 +19,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.7.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="2.9.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 RAW_BASE="${CURL_SH_RAW_BASE:-https://raw.githubusercontent.com/mkolakowski/curl/main}"
 
@@ -94,7 +94,7 @@ require_sudo() {
 # ---------------------------------------------------------------- the catalog --
 # Order matters: this is the order things get installed in, so git comes early
 # and the Claude Code hand-off comes last.
-PKG_KEYS=(update    git     gh      screen  btop     docker                 tailscale       claude)
+PKG_KEYS=(update    git     gh      screen  btop     docker                 tailscale       purplemux       claude)
 PKG_BLURB=(
     "apt update && apt full-upgrade"
     "version control"
@@ -103,6 +103,7 @@ PKG_BLURB=(
     "resource monitor"
     "Docker Engine + Compose plugin"
     "mesh VPN"
+    "web terminal multiplexer for Claude Code (pulls in Node 20+ and tmux)"
     "Claude Code + boot session (runs claude.sh)"
 )
 
@@ -114,6 +115,24 @@ check_screen()    { have screen    && screen --version 2>/dev/null | awk '{print
 check_btop()      { have btop      && printf 'installed'; }
 check_docker()    { have docker    && docker --version 2>/dev/null | awk '{print $3}' | tr -d ','; }
 check_tailscale() { have tailscale && tailscale version 2>/dev/null | head -1; }
+# Read the version from package.json rather than running the binary: purplemux
+# is a server, and an unrecognised --version could start it instead of printing.
+check_purplemux() {
+    have purplemux || return 1
+    local pj root
+    # Ask npm where global packages live rather than assuming a prefix; a user
+    # with an npm prefix in their profile puts them somewhere else entirely.
+    root="$(npm root -g 2>/dev/null)"
+    for pj in "${root:-/nonexistent}/purplemux/package.json" \
+              /usr/lib/node_modules/purplemux/package.json \
+              /usr/local/lib/node_modules/purplemux/package.json; do
+        if [ -r "$pj" ]; then
+            sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -1
+            return 0
+        fi
+    done
+    printf 'installed'
+}
 check_claude()    { as_user 'command -v claude >/dev/null 2>&1' && as_user 'timeout 10 claude --version' 2>/dev/null | awk '{print $1}'; }
 
 pkg_index() {
@@ -247,6 +266,62 @@ install_docker() {
         $SUDO usermod -aG docker "$TARGET_USER" \
             && warn "added $TARGET_USER to the docker group — log out and back in for it to apply"
     fi
+}
+
+# purplemux needs Node.js 20+; Ubuntu's own nodejs package is usually older, so
+# pull it from NodeSource when what is here is too old.
+NODE_MIN=20
+ensure_node() {
+    local cur=0
+    have node && cur="$(node -v 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')"
+    if [ "${cur:-0}" -ge "$NODE_MIN" ]; then
+        skip "node $(node -v 2>/dev/null) already satisfies >= v$NODE_MIN"
+        return 0
+    fi
+    if [ "${cur:-0}" -gt 0 ]; then
+        say "Upgrading Node.js (found v$cur, purplemux needs $NODE_MIN+)"
+    else
+        say "Installing Node.js $NODE_MIN (purplemux needs $NODE_MIN+)"
+    fi
+    apt_refresh
+    DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq ca-certificates curl gnupg || true
+
+    $SUDO install -m 0755 -d /etc/apt/keyrings
+    local key=/etc/apt/keyrings/nodesource.gpg
+    if [ ! -s "$key" ]; then
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | $SUDO gpg --dearmor -o "$key" \
+            || { warn "could not fetch the NodeSource signing key"; return 1; }
+        $SUDO chmod a+r "$key"
+    fi
+
+    local src=/etc/apt/sources.list.d/nodesource.sources want
+    want="$(printf 'Types: deb\nURIs: https://deb.nodesource.com/node_%s.x/\nSuites: nodistro\nComponents: main\nSigned-By: %s\n' "$NODE_MIN" "$key")"
+    if [ "$(cat "$src" 2>/dev/null)" != "$want" ]; then
+        printf '%s' "$want" | $SUDO tee "$src" >/dev/null
+        $SUDO apt-get update -qq
+    fi
+
+    DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq nodejs \
+        || { warn "Node.js install failed"; return 1; }
+    ok "node $(node -v 2>/dev/null) installed"
+}
+
+install_purplemux() {
+    if have purplemux; then
+        skip "purplemux $(check_purplemux) already installed"
+    else
+        say "Installing purplemux"
+        # Prerequisites first, in the same step: tmux and Node.js 20+.
+        apt_refresh
+        apt_ensure tmux tmux || return 1
+        ensure_node || return 1
+        have npm || { warn "npm is missing even after installing Node.js"; return 1; }
+        $SUDO npm install -g purplemux --silent \
+            || { warn "npm install -g purplemux failed"; return 1; }
+        have purplemux || { warn "purplemux is not on PATH after install"; return 1; }
+        ok "purplemux $(check_purplemux) installed"
+    fi
+    skip "start it with: purplemux   (then open http://localhost:8022)"
 }
 
 install_tailscale() {

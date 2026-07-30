@@ -13,6 +13,90 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.9.0] - 2026-07-30
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Add purplemux to the catalog, prerequisites included
+
+purplemux is a web-native terminal multiplexer for Claude Code and
+Codex, so it belongs next to the rest of this. It needs tmux and Node.js
+20+, and Ubuntu ships an older nodejs than that, so the entry installs
+both rather than failing on a box that has neither: apt for tmux, and
+NodeSource for Node when what is present is older than 20. Node is left
+alone when it already satisfies the minimum.
+
+The installed version is read out of the package's package.json rather
+than by running the binary, since purplemux is a server and an
+unrecognised --version could start it instead of printing. The path
+comes from "npm root -g" rather than an assumed prefix, because a user
+with their own npm prefix puts global packages somewhere else.
+```
+
+</details>
+
+### Added
+
+- `purplemux` in the `curl.sh` catalog — a web terminal multiplexer for Claude
+  Code. Selecting it installs its prerequisites in the same step: `tmux`, and
+  Node.js 20+ from NodeSource when the box has something older. Node is left
+  alone if it already meets the minimum. Once installed, run `purplemux` and
+  open `http://localhost:8022`.
+
+## [2.8.0] - 2026-07-29
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Start screen in the work directory, and keep each session's output
+
+screen was started from wherever the script happened to be, with only
+the window cding into the work directory. The distinction matters: the
+session daemon's working directory is what a new window (Ctrl-a c)
+inherits and what you land in if the command exits, so opening a second
+window in a session dropped you somewhere unrelated. screen is now
+launched from the work directory itself, and a directory it cannot enter
+is reported and skipped rather than silently producing a dead session.
+
+A session whose command exits immediately used to vanish without a
+trace: the screen session was gone before anything could read it, so a
+failure looked identical to a session that never started. Each window is
+now recorded with screen's -Logfile, and a start that fails quotes the
+last lines the session printed. For an unsigned-in box that turns "did
+not come up" into "Remote Control requires a claude.ai subscription /
+Run: claude auth login". doctor shows the same log for a session that
+has exited, and the logging is skipped on screen older than 4.06, which
+predates -Logfile.
+
+Stub contract goes to 5, so existing boot scripts are replaced.
+```
+
+</details>
+
+### Fixed
+
+- `screen` is now started **from** the session's work directory, not merely told
+  to `cd` inside the window. The session daemon's directory is what a new window
+  inherits and where you land if the command exits, so a second window in a
+  session previously opened somewhere unrelated.
+- A work directory that cannot be entered is reported and the session skipped,
+  instead of producing a session that dies immediately.
+
+### Added
+
+- Each session's output is captured to
+  `~/.local/state/claude-sessions/<name>.log` using screen's `-Logfile`, so a
+  session that exits straight away still leaves the reason behind. A failed
+  start now quotes those lines — on a box that is not signed in, `'x' did not
+  come up` becomes the actual `Remote Control requires a claude.ai subscription`
+  message. `doctor` shows the same for a session that has exited. Skipped
+  automatically on screen older than 4.06, which has no `-Logfile`.
+
 ## [2.7.0] - 2026-07-29
 
 ### Commit message

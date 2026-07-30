@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.7.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="2.9.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 readonly CRON_MARKER="# claude-session-boot (managed by claude.sh)"
 # Entries written by the older combined curl.sh, so upgrades replace rather
@@ -40,7 +40,7 @@ readonly TAB=$'\t'
 # Bump when the generated boot script's contract changes (arguments it accepts,
 # config it reads). An on-disk stub declaring anything else cannot be trusted to
 # start the session we ask it for.
-readonly STUB_VERSION=4
+readonly STUB_VERSION=5
 
 # ------------------------------------------------------------------ plumbing --
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -148,7 +148,7 @@ mkdir_for_user() {
 ensure_home_dirs() {
     local d
     for d in "$TARGET_HOME/.config" "$TARGET_HOME/.local/bin" \
-             "$TARGET_HOME/.local/share" "$TARGET_HOME/.local/state"; do
+             "$TARGET_HOME/.local/share" "$TARGET_HOME/.local/state" "$SESSION_LOG_DIR"; do
         mkdir_for_user "$d"
     done
     own "$TARGET_HOME/.config"
@@ -170,6 +170,7 @@ SESSIONS_CONF="${CLAUDE_SESSIONS_CONF:-$TARGET_HOME/.config/claude-sessions.conf
 LEGACY_CONF="$TARGET_HOME/.config/claude-session.env"
 BOOT_SCRIPT="$TARGET_HOME/.local/bin/claude-session-boot.sh"
 BOOT_LOG="$TARGET_HOME/.local/state/claude-session-boot.log"
+SESSION_LOG_DIR="$TARGET_HOME/.local/state/claude-sessions"
 
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 
@@ -358,7 +359,12 @@ verify_remote() {
         printf '%s\n' "$dump" | grep -iE 'remote control|trust|login|subscription' | head -4 | sed 's/^/         /' >&2
         return 1
     fi
-    warn "could not confirm Remote Control connected — check with: claude.sh doctor $name"
+    local log; log="$(session_log_of "$name")"
+    warn "could not confirm Remote Control connected"
+    if [ -s "$log" ]; then
+        tail -8 "$log" | sed 's/\r$//' | sed '/^[[:space:]]*$/d' | sed 's/^/         /' >&2
+    fi
+    warn "  more detail: claude.sh doctor $name"
     return 1
 }
 
@@ -420,6 +426,9 @@ start_one() {
         write_boot_script
     fi
     mkdir_for_user "$(dirname "$BOOT_LOG")"
+    mkdir_for_user "$SESSION_LOG_DIR"
+    : > "$(session_log_of "$name")" 2>/dev/null || true
+    own "$SESSION_LOG_DIR"
     : >> "$BOOT_LOG" 2>/dev/null || true
     own "$(dirname "$BOOT_LOG")"
     local mode; mode="$(session_remote "$name")"
@@ -440,9 +449,16 @@ start_one() {
         [ "$mode" != no ] && verify_remote "$name"
         return 0
     fi
-    local appeared
+    local appeared log
     appeared="$(running_names | grep -vxF "$name" | tr '\n' ' ')"
-    warn "'$name' did not come up — see $BOOT_LOG"
+    warn "'$name' did not come up"
+    log="$(session_log_of "$name")"
+    if [ -s "$log" ]; then
+        warn "  it printed this before exiting:"
+        tail -12 "$log" | sed 's/\r$//' | sed '/^[[:space:]]*$/d' | sed 's/^/         /' >&2
+    else
+        warn "  see $BOOT_LOG"
+    fi
     [ -n "${appeared// /}" ] && warn "  note: these are running instead: ${appeared% }"
     return 1
 }
@@ -752,6 +768,8 @@ install_claude_code() {
 # --------------------------------------------------------- session scaffolding --
 # Which contract does the stub on disk implement? Empty means it predates the
 # marker, i.e. the single-session version.
+session_log_of() { printf '%s\n' "$SESSION_LOG_DIR/$1.log"; }
+
 stub_version_of() {
     sed -n 's/^# claude-session-boot stub-version: //p' "$1" 2>/dev/null | head -1
 }
@@ -764,7 +782,7 @@ write_boot_script() {
 
     cat > "$tmp" <<-'BOOT'
 	#!/usr/bin/env bash
-	# claude-session-boot stub-version: 4
+	# claude-session-boot stub-version: 5
 	#
 	# claude-session-boot.sh — launch Claude Code sessions in detached screens.
 	#
@@ -781,7 +799,15 @@ write_boot_script() {
 
 	CONF="${CLAUDE_SESSIONS_CONF:-$HOME/.config/claude-sessions.conf}"
 	CLAUDE_CMD="${CLAUDE_CMD:-claude}"
+	LOGDIR="${CLAUDE_SESSION_LOGDIR:-$HOME/.local/state/claude-sessions}"
 	ONLY="${1:-}"
+
+	# screen gained -Logfile in 4.06; without it we simply do not capture output.
+	SCREEN_CAN_LOG=''
+	_sv="$(screen --version 2>/dev/null | awk '{print $3}')"
+	if [ -n "$_sv" ] && [ "$(printf '%s\n4.06.00\n' "$_sv" | sort -V | head -1)" = "4.06.00" ]; then
+	    SCREEN_CAN_LOG=1
+	fi
 
 	export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 	log() { printf '%s %s\n' "$(date -Is)" "$*"; }
@@ -834,6 +860,7 @@ write_boot_script() {
 	        continue
 	    fi
 	    mkdir -p "$dir"
+	    mkdir -p "$LOGDIR"
 	    case "$remote" in
 	        server)
 	            # Server mode: no local prompt, and it EXITS on failure instead
@@ -847,7 +874,21 @@ write_boot_script() {
 	            log "starting '$name' in $dir"
 	            launch="$CLAUDE_CMD" ;;
 	    esac
-	    screen -dmS "$name" bash -lc "cd $(printf %q "$dir") && exec $launch"
+	    # Start screen FROM the work directory, not just the window inside it:
+	    # the session daemon's cwd is what any new window (Ctrl-a c) inherits,
+	    # and what you land in if the command exits.
+	    if ! cd "$dir"; then
+	        log "cannot enter $dir — skipping '$name'"
+	        continue
+	    fi
+	    # Keep the window's output, so a session that dies immediately still
+	    # leaves the reason behind. Without this it vanishes without a trace.
+	    logfile="$LOGDIR/$name.log"
+	    if [ -n "$SCREEN_CAN_LOG" ]; then
+	        screen -L -Logfile "$logfile" -dmS "$name" bash -lc "cd $(printf %q "$dir") && exec $launch"
+	    else
+	        screen -dmS "$name" bash -lc "cd $(printf %q "$dir") && exec $launch"
+	    fi
 	done
 	BOOT
 
@@ -1005,6 +1046,11 @@ doctor() {
                 printf '      %s\n' "${C_YELLOW}no session URL on screen — last lines:${C_RESET}"
                 printf '%s\n' "$dump" | tail -6 | sed 's/^/        /'
             fi
+        fi
+        local slog; slog="$(session_log_of "$n")"
+        if [ -s "$slog" ] && ! session_running "$n"; then
+            printf '      %s\n' "${C_DIM}last output before it exited ($slog):${C_RESET}"
+            tail -8 "$slog" | sed 's/\r$//' | sed '/^[[:space:]]*$/d' | sed 's/^/        /'
         fi
     done < <(sessions_read)
     printf '\n  %s\n' "${C_DIM}boot log: $BOOT_LOG${C_RESET}"
