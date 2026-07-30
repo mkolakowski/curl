@@ -129,8 +129,10 @@ with no arguments gives you the table:
   number = manage that one · n = new session · s = start all · r = restart all · x = stop all · q = quit
 ```
 
-Pick a number to Enter, Restart, Stop or Start that session, or toggle its
-remote control. `s`, `r` and `x` act on everything at once. `n` creates a new
+Pick a number to manage a session. The entries you get depend on its state — a
+stopped session offers Start, a running one Enter, Restart and Stop — so the
+default is always the thing you came for, and Remote is a single entry that
+cycles off → server → interactive. `s`, `r` and `x` act on everything at once. `n` creates a new
 session, asking for each answer in turn:
 
 ```

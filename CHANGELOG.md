@@ -13,6 +13,62 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.11.0] - 2026-07-30
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Build the session menu from the session's state
+
+The per-session menu offered the same seven entries whatever the session
+was doing, and three of them were dead at any moment. Worse, Enter sat
+under the default keystroke: choosing a stopped session and pressing
+Enter called enter_one, which calls die(), which exits the whole script
+— so the single likeliest keystroke sequence dropped you back to the
+shell instead of doing anything.
+
+The entries are now built from the state. A stopped session offers
+Start, Remote and Back; a running one Enter, Restart, Stop, Remote and
+Back. The default is always the verb you came for, and the numbers only
+ever name things that can actually happen.
+
+Remote and Mode were two entries for one three-state setting, so going
+from off to interactive took two visits. They are now one entry that
+cycles off -> server -> interactive -> off, labelled with where it will
+land rather than leaving you to work it out.
+
+Two remaining ways to fall out of the menu are closed: start_one called
+die() when the boot script was missing, which is both fatal and needless
+when it can simply write the file, and Enter now rechecks that the
+session is still running rather than trusting the menu it drew a moment
+ago.
+```
+
+</details>
+
+### Changed
+
+- The per-session menu is built from the session's state. A stopped session
+  offers Start, Remote and Back; a running one Enter, Restart, Stop, Remote and
+  Back. Previously all seven entries showed regardless, three of them dead at
+  any given moment.
+- Remote and Mode are one entry that cycles off → server mode → interactive →
+  off, labelled with where it will land. Reaching interactive from off used to
+  take two separate choices.
+
+### Fixed
+
+- Choosing a stopped session and pressing Enter — the default — exited the whole
+  script. Enter mapped to a code path that calls `die()`, so the likeliest
+  keystroke on a table where everything is stopped dropped you back to the
+  shell.
+- A missing boot script no longer aborts the program; it is written, the same
+  way a stale one is already replaced.
+- Enter rechecks that the session is still running, rather than trusting the
+  state the menu was drawn with.
+
 ## [2.10.0] - 2026-07-30
 
 ### Commit message

@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.10.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="2.11.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 readonly CRON_MARKER="# claude-session-boot (managed by claude.sh)"
 # Entries written by the older combined curl.sh, so upgrades replace rather
@@ -420,11 +420,17 @@ start_one() {
     dir="$(session_dir "$name")"
     [ -n "$dir" ] || { warn "'$name' is not registered — add it with: claude.sh add $name <dir>"; return 1; }
     if session_running "$name"; then skip "'$name' already running"; return 0; fi
-    [ -x "$BOOT_SCRIPT" ] || die "boot script missing at $BOOT_SCRIPT — run 'claude.sh install' first."
-    if [ "$(stub_version_of "$BOOT_SCRIPT")" != "$STUB_VERSION" ]; then
+    # Write the boot script if it is missing or stale. This used to die() when
+    # missing, which exits the whole program — unpleasant from inside the menu,
+    # and pointless when we can simply write the file.
+    if [ ! -x "$BOOT_SCRIPT" ]; then
+        warn "boot script missing at $BOOT_SCRIPT — writing it"
+        write_boot_script
+    elif [ "$(stub_version_of "$BOOT_SCRIPT")" != "$STUB_VERSION" ]; then
         warn "$BOOT_SCRIPT is from an older version and cannot start a named session — replacing it"
         write_boot_script
     fi
+    [ -x "$BOOT_SCRIPT" ] || { warn "could not write $BOOT_SCRIPT"; return 1; }
     mkdir_for_user "$(dirname "$BOOT_LOG")"
     mkdir_for_user "$SESSION_LOG_DIR"
     : > "$(session_log_of "$name")" 2>/dev/null || true
@@ -531,179 +537,77 @@ print_table() {
 
 nth_session() { sessions_read | awk -F'\t' -v i="$1" 'NR == i { print $1 }'; }
 
+# The entries depend on the session's state: offering Enter for a stopped
+# session put a call to die() — which exits the whole script — under the default
+# keystroke, and Start/Stop/Restart are each meaningless in one of the two
+# states. Build the list from what is actually possible.
 manage_one() {
-    local name="$1" choice rem
+    local name="$1" choice rem running=0 i
+    local -a labels=() actions=()
     rem="$(session_remote "$name")"
+    session_running "$name" && running=1
+
     printf '\n%s  %s\n' "${C_BOLD}$name${C_RESET}" "${C_DIM}$(session_dir "$name")${C_RESET}"
-    if session_running "$name"; then printf '  %s\n' "$(session_line_of "$name")"; else printf '  %s\n' "not running"; fi
+    if [ "$running" = 1 ]; then printf '  %s\n' "$(session_line_of "$name")"; else printf '  %s\n' "not running"; fi
     case "$rem" in
         server)      printf '  remote control: %s\n\n' "on (server mode)" ;;
         interactive) printf '  remote control: %s\n\n' "on (interactive)" ;;
         *)           printf '  remote control: %s\n\n' "off" ;;
     esac
-    cat <<-MENU
-	  1) Enter    attach to this session
-	  2) Restart  stop it and start a fresh one
-	  3) Stop     stop it
-	  4) Start    start it
-	  5) Remote   $([ "$rem" = no ] && echo "turn remote control on (server mode)" || echo "turn remote control off")
-	  6) Mode     switch between server and interactive remote control
-	  7) Back
-	MENU
+
+    if [ "$running" = 1 ]; then
+        labels+=("Enter    attach to this session");        actions+=(enter)
+        labels+=("Restart  stop it and start a fresh one"); actions+=(restart)
+        labels+=("Stop     stop it");                       actions+=(stop)
+    else
+        labels+=("Start    start it");                      actions+=(start)
+    fi
+    # One entry for one setting, cycling off -> server -> interactive -> off,
+    # labelled with where it will land rather than making you work it out.
+    case "$rem" in
+        no)          labels+=("Remote   off → server mode") ;;
+        server)      labels+=("Remote   server mode → interactive") ;;
+        interactive) labels+=("Remote   interactive → off") ;;
+    esac
+    actions+=(remote)
+    labels+=("Back"); actions+=(back)
+
+    for i in "${!labels[@]}"; do printf '  %d) %s\n' "$((i + 1))" "${labels[i]}"; done
     choice="$(ask "Choice [1]: " 1)"
     printf '\n'
-    case "$choice" in
-        1|''|e|enter) enter_one "$name" ;;
-        2|r|restart)  restart_one "$name" ;;
-        3|s|stop)     stop_one "$name" ;;
-        4|start)      start_one "$name" ;;
-        5|remote)     if [ "$rem" = no ]; then session_set_remote "$name" on; else session_set_remote "$name" off; fi ;;
-        6|mode)       if [ "$rem" = interactive ]; then session_set_remote "$name" on
-                      else session_set_remote "$name" interactive; fi ;;
-        7|b|back|q)   return 0 ;;
-        *)            warn "unrecognised choice '$choice'" ;;
-    esac
-}
 
-# Plausible places to run a session, newest-first-ish and deduped: where you
-# are now, the work directory and what is under it, siblings of sessions you
-# already have, then home. Paths with spaces are dropped — the registry is
-# whitespace-separated and cannot hold them.
-candidate_dirs() {
-    {
-        [ -n "${PWD:-}" ] && [ "$PWD" != / ] && printf '%s\n' "$PWD"
-        printf '%s\n' "$TARGET_HOME/work"
-        find "$TARGET_HOME/work" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort
-        sessions_read | cut -f2 | while IFS= read -r d; do [ -n "$d" ] && dirname "$d"; done
-        printf '%s\n' "$TARGET_HOME"
-    } 2>/dev/null | grep -v '[[:space:]]' | awk 'NF && !seen[$0]++' | head -8
-}
-
-# Clone a GitHub repo and use it as a session's working directory. Sets
-# CLONED_DIR on success. All output goes to the terminal rather than stdout,
-# so the caller reads the result from the variable instead of capturing it.
-CLONED_DIR=''
-clone_repo_flow() {
-    CLONED_DIR=''
-    local spec url name parent dest
-    spec="$(ask "  Repo (owner/name, or a full URL): " '')"
-    spec="${spec%/}"; spec="${spec%.git}"
-    case "$spec" in
-        '')             warn "a repo is required"; return 1 ;;
-        *[[:space:]]*)  warn "that does not look like a repo"; return 1 ;;
-        *://*|git@*)    url="$spec" ;;
-        /*|./*|../*|\~*) url="${spec/#\~/$TARGET_HOME}" ;;   # a local repo or mirror
-        */*/*)          warn "'$spec' has too many slashes — use owner/name"; return 1 ;;
-        */*)            url="https://github.com/$spec" ;;
-        *)              warn "use owner/name, a full git URL, or a local path"; return 1 ;;
-    esac
-    name="${url##*/}"; name="${name%.git}"
-    [ -n "$name" ] || { warn "could not work out a directory name from '$spec'"; return 1; }
-
-    parent="$(ask "  Clone into [$TARGET_HOME/work]: " "$TARGET_HOME/work")"
-    parent="${parent/#\~/$TARGET_HOME}"
-    case "$parent" in
-        *[[:space:]]*) warn "work directories may not contain spaces"; return 1 ;;
-        /*) ;;
-        *) parent="$PWD/$parent" ;;
-    esac
-    dest="$parent/$name"
-
-    if [ -d "$dest/.git" ]; then
-        say "$dest is already a clone"
-        if ask_yn "  Use it as it is?" y; then CLONED_DIR="$dest"; return 0; fi
-        return 1
-    fi
-    if [ -e "$dest" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ]; then
-        warn "$dest already exists and is not empty"
-        return 1
-    fi
-
-    mkdir_for_user "$parent"
-    say "Cloning $url into $dest"
-    # gh handles private repos once you have signed in; git is the fallback and
-    # is fine for anything public.
-    if have gh && as_user 'gh auth status >/dev/null 2>&1'; then
-        as_user "gh repo clone $(printf %q "$url") $(printf %q "$dest")" || { warn "clone failed"; return 1; }
+    local act=''
+    if printf '%s' "$choice" | grep -qE '^[0-9]+$' && [ "$choice" -ge 1 ] && [ "$choice" -le ${#actions[@]} ]; then
+        act="${actions[$((choice - 1))]}"
     else
-        have gh && skip "gh is installed but not signed in — cloning with git (public repos only)"
-        as_user "git clone $(printf %q "$url") $(printf %q "$dest")" || { warn "clone failed"; return 1; }
-    fi
-    own "$dest"
-    ok "cloned into $dest"
-    CLONED_DIR="$dest"
-}
-
-new_session_interactive() {
-    if [ ! -r /dev/tty ] || [ -n "${ASSUME_YES:-}" ]; then
-        warn "not interactive — use: claude.sh add <name> <dir> [--no-autostart] [--remote]"
-        return 1
-    fi
-
-    printf '\n%s\n\n' "${C_BOLD}New session${C_RESET}"
-
-    local name
-    while true; do
-        name="$(ask "  Name: " '')"
-        if [ -z "$name" ]; then warn "a name is required"; continue; fi
-        case "$name" in
-            *[!A-Za-z0-9._-]*) warn "letters, digits, dot, dash and underscore only"; continue ;;
+        case "$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')" in
+            ''|e|enter) act="${actions[0]}" ;;
+            r|restart)  act=restart ;;
+            s|start)    act=start ;;
+            stop|kill)  act=stop ;;
+            remote)     act=remote ;;
+            b|back|q)   act=back ;;
+            *)          warn "unrecognised choice '$choice'"; return 0 ;;
         esac
-        if session_known "$name"; then warn "'$name' is already registered"; continue; fi
-        break
-    done
-
-    local cands=() d
-    while IFS= read -r d; do [ -n "$d" ] && cands+=("$d"); done < <(candidate_dirs)
-    [ ${#cands[@]} -gt 0 ] || cands=("$TARGET_HOME/work")
-
-    printf '\n  %s\n' "Where should it run?"
-    local i
-    for i in "${!cands[@]}"; do
-        if [ -d "${cands[i]}" ]; then
-            printf '    %d) %s\n' "$((i + 1))" "${cands[i]}"
-        else
-            printf '    %d) %s %s\n' "$((i + 1))" "${cands[i]}" "${C_DIM}(will be created)${C_RESET}"
-        fi
-    done
-    local n_else=$(( ${#cands[@]} + 1 )) n_clone=$(( ${#cands[@]} + 2 ))
-    printf '    %d) %s\n' "$n_else"  "somewhere else"
-    printf '    %d) %s\n' "$n_clone" "clone a GitHub repo"
-
-    local pick dir
-    pick="$(ask "  Choice [1]: " 1)"
-    if [ "$pick" = "$n_clone" ]; then
-        printf '\n'
-        clone_repo_flow || return 1
-        dir="$CLONED_DIR"
-    elif printf '%s' "$pick" | grep -qE '^[0-9]+$' && [ "$pick" -ge 1 ] && [ "$pick" -le ${#cands[@]} ]; then
-        dir="${cands[$((pick - 1))]}"
-    else
-        dir="$(ask "  Path: " "${cands[0]}")"
     fi
-    dir="${dir/#\~/$TARGET_HOME}"
-    case "$dir" in
-        '' ) warn "a path is required"; return 1 ;;
-        *[[:space:]]*) warn "work directories may not contain spaces"; return 1 ;;
-        /*) ;;
-        *) dir="$PWD/$dir" ;;
+
+    case "$act" in
+        enter)
+            # It may have stopped between drawing this menu and choosing, so
+            # check again rather than letting enter_one exit the script.
+            if session_running "$name"; then enter_one "$name"
+            else warn "'$name' is no longer running"; fi ;;
+        restart) restart_one "$name" ;;
+        stop)    stop_one "$name" ;;
+        start)   start_one "$name" ;;
+        remote)
+            case "$rem" in
+                no)          session_set_remote "$name" on ;;
+                server)      session_set_remote "$name" interactive ;;
+                interactive) session_set_remote "$name" off ;;
+            esac ;;
+        back)    return 0 ;;
     esac
-    [ -d "$dir" ] || printf '  %s\n' "${C_DIM}$dir does not exist yet and will be created${C_RESET}"
-
-    printf '\n'
-    local auto=autostart rem=''
-    ask_yn "  Start it automatically after a reboot?" y || auto=noautostart
-    if ask_yn "  Enable remote control (drive it from claude.ai and the Claude app)?" n; then
-        rem=remote
-    fi
-
-    printf '\n'
-    session_add "$name" "$dir" "$auto" "$rem" || return 1
-
-    if ask_yn "  Start it now?" y; then
-        printf '\n'
-        start_one "$name"
-    fi
 }
 
 main_menu() {
