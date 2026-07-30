@@ -19,7 +19,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.11.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="2.12.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 RAW_BASE="${CURL_SH_RAW_BASE:-https://raw.githubusercontent.com/mkolakowski/curl/main}"
 
@@ -544,6 +544,51 @@ dc_install() {
     return $rc
 }
 
+# start / stop / restart an already-installed stack. Installing is a separate
+# path because it also writes files and asks for secrets.
+dc_control() {
+    local verb="$1" name="$2" dir cc args out
+    dir="$(dc_dir "$name")"
+    if [ ! -r "$dir/docker-compose.yml" ]; then
+        warn "'$name' is not installed yet — Enter installs it"
+        return 1
+    fi
+    cc="$(dc_compose_cmd)"
+    [ -n "$cc" ] || { warn "no docker compose available"; return 1; }
+    case "$verb" in
+        start)   say "Starting $name";   args="up -d" ;;
+        stop)    say "Stopping $name";   args="stop" ;;
+        restart) say "Restarting $name"; args="restart" ;;
+        *) warn "unknown action '$verb'"; return 1 ;;
+    esac
+    # shellcheck disable=SC2086  # $cc and $args are deliberately word-split
+    if out="$( cd "$dir" && $SUDO $cc $args 2>&1 )"; then
+        ok "$name is now $(dc_state "$name")"
+    else
+        warn "$cc $args failed:"
+        printf '%s\n' "$out" | tail -4 | sed 's/^/         /' >&2
+        return 1
+    fi
+}
+
+# Apply an action to everything ticked; complain if nothing is.
+dc_apply() {
+    local verb="$1" idx count=0 rc=0
+    for idx in "${!DC_KEYS[@]}"; do [ "${DC_SELECTED[idx]}" = 1 ] && count=$((count + 1)); done
+    if [ "$count" -eq 0 ]; then
+        warn "nothing selected — tick some numbers first"
+        return 1
+    fi
+    for idx in "${!DC_KEYS[@]}"; do
+        [ "${DC_SELECTED[idx]}" = 1 ] || continue
+        printf '\n'
+        if [ "$verb" = install ]; then dc_install "${DC_KEYS[idx]}" || rc=1
+        else dc_control "$verb" "${DC_KEYS[idx]}" || rc=1; fi
+    done
+    printf '\n'
+    return $rc
+}
+
 dc_print_catalog() {
     local i key st pad mark
     printf '\n  %-3s %-3s %-14s %-9s %s\n' '' '#' 'container' 'state' 'what it is'
@@ -584,22 +629,17 @@ docker_menu() {
     while true; do
         printf '%s' "${C_BOLD}Docker containers${C_RESET}"
         dc_print_catalog
-        printf '  %s\n' "${C_DIM}stacks live in $STACKS_DIR · numbers toggle · a=all · n=none · q=back${C_RESET}"
-        input="$(ask "Install [Enter to confirm]: " '')"
+        printf '  %s\n' "${C_DIM}stacks live in $STACKS_DIR · numbers toggle · a=all · n=none${C_RESET}"
+        printf '  %s\n' "${C_DIM}Enter=install · s=start · x=stop · r=restart · q=back${C_RESET}"
+        input="$(ask "Choice [Enter to install]: " '')"
         case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
             q|quit|back) return 0 ;;
             a|all)  for idx in "${!DC_KEYS[@]}"; do DC_SELECTED[idx]=1; done; continue ;;
             n|none) dc_reset; continue ;;
-            '')
-                count=0
-                for idx in "${!DC_KEYS[@]}"; do [ "${DC_SELECTED[idx]}" = 1 ] && count=$((count + 1)); done
-                if [ "$count" -eq 0 ]; then warn "nothing selected — pick some numbers, or q to go back"; continue; fi
-                require_sudo
-                for idx in "${!DC_KEYS[@]}"; do
-                    [ "${DC_SELECTED[idx]}" = 1 ] || continue
-                    printf '\n'; dc_install "${DC_KEYS[idx]}"
-                done
-                printf '\n'; dc_reset; continue ;;
+            '')        require_sudo; dc_apply install && dc_reset; continue ;;
+            s|start)   require_sudo; dc_apply start   && dc_reset; continue ;;
+            x|stop)    require_sudo; dc_apply stop    && dc_reset; continue ;;
+            r|restart) require_sudo; dc_apply restart && dc_reset; continue ;;
         esac
         for tok in $(printf '%s' "$input" | tr ',' ' '); do
             if printf '%s' "$tok" | grep -qE '^[0-9]+$'; then
@@ -766,9 +806,10 @@ usage() {
 	  install all         install everything
 	  install missing     install whatever is not there yet
 	  list                show the catalog and what is already installed
-	  containers [name...]
+	  containers [start|stop|restart] [name...]
 	                      docker container stacks: cloudflared, beszel-agent,
-	                      dockge. With no name, opens the checklist.
+	                      dockge. No arguments opens the checklist; a bare verb
+	                      acts on every installed stack.
 	  update              apt update + full-upgrade only
 	  reboot              reboot the machine
 	  version             print the version and exit
@@ -805,13 +846,29 @@ main() {
         list|ls)        list_catalog ;;
         containers|docker-containers)
             shift 2>/dev/null || true
+            local verb=install
+            case "${1:-}" in
+                install|start|stop|restart) verb="$1"; shift ;;
+            esac
             if [ $# -gt 0 ]; then
                 require_sudo
                 local c rc=0
                 for c in "$@"; do
-                    if dc_index "$c" >/dev/null; then dc_install "$c" || rc=1
-                    else die "unknown container '$c'. Try: curl.sh containers"; fi
+                    dc_index "$c" >/dev/null || die "unknown container '$c'. Try: curl.sh containers"
+                    if [ "$verb" = install ]; then dc_install "$c" || rc=1
+                    else dc_control "$verb" "$c" || rc=1; fi
                 done
+                return $rc
+            fi
+            # A bare verb with no names acts on everything already installed.
+            if [ "$verb" != install ]; then
+                require_sudo
+                local k rc=0 acted=0
+                for k in "${DC_KEYS[@]}"; do
+                    [ -r "$(dc_dir "$k")/docker-compose.yml" ] || continue
+                    acted=1; dc_control "$verb" "$k" || rc=1
+                done
+                [ "$acted" = 1 ] || warn "no container stacks installed yet"
                 return $rc
             fi
             docker_menu ;;

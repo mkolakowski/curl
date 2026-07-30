@@ -82,9 +82,16 @@ history. Press Enter to skip: the stack is written with `REPLACE_ME` and left
 stopped, and the script tells you which file to finish. Docker itself is
 installed first if it isn't already there.
 
+Ticked containers can also be started, stopped and restarted from the same
+screen — `Enter` installs, `s` starts, `x` stops, `r` restarts — so the submenu
+manages a stack for its whole life, not just the first five minutes. The same
+verbs work on the command line, and a bare verb acts on every installed stack:
+
 ```
-bash <(curl -Ss .../curl.sh) containers            # the checklist
-bash <(curl -Ss .../curl.sh) containers dockge     # straight to one
+bash <(curl -Ss .../curl.sh) containers               # the checklist
+bash <(curl -Ss .../curl.sh) containers dockge        # install one
+bash <(curl -Ss .../curl.sh) containers restart       # restart everything
+bash <(curl -Ss .../curl.sh) containers stop dockge   # one stack
 ```
 
 Three things need a human afterwards and the script says so at the time: `sudo

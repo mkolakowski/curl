@@ -13,6 +13,44 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [2.12.0] - 2026-07-30
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Start, stop and restart container stacks from the docker submenu
+
+The submenu could only install. Once a stack existed there was nothing
+to do with it from here, which made it a one-shot installer rather than
+somewhere to manage containers.
+
+Ticked entries can now be started, stopped and restarted: Enter still
+installs, s starts, x stops, r restarts, each mapping to the obvious
+compose subcommand -- up -d, stop, restart. A stack that has not been
+installed yet says so instead of failing inside compose, and a failure
+prints what compose said rather than discarding it.
+
+The same verbs work on the command line: "curl.sh containers stop
+dockge" for one, or a bare "curl.sh containers restart" to act on every
+installed stack. With no arguments it still opens the checklist, and a
+name with no verb still installs, so nothing that worked before changed.
+```
+
+</details>
+
+### Added
+
+- The docker containers submenu can now start, stop and restart the stacks you
+  tick, not just install them: `Enter` installs, `s` starts, `x` stops, `r`
+  restarts, mapping to `up -d`, `stop` and `restart`.
+- The same verbs on the command line — `curl.sh containers stop dockge` for one
+  stack, or a bare `curl.sh containers restart` for every installed stack. No
+  arguments still opens the checklist and a bare name still installs.
+- A stack that has not been installed yet is reported as such rather than
+  failing inside compose, and a compose failure prints its output.
+
 ## [2.11.0] - 2026-07-30
 
 ### Commit message
