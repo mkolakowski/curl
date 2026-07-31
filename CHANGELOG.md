@@ -13,6 +13,61 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [4.0.3] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Make the plumbing shared by both scripts byte-identical
+
+curl.sh and claude.sh each carry their own copy of the colour block,
+the say/ok/skip/warn/die helpers, ask, have, as_user, require_sudo and
+apt_ensure. The copies had drifted in small ways, which is exactly the
+sort of thing that turns merging the two into a reconciliation instead
+of a copy. This gathers them into one block, marked by comments at both
+ends, that is now byte-identical in the two files.
+
+Three divergences had to be settled rather than picked. banner printed
+a hardcoded script name, so it now reads $SCRIPT_NAME, set once beside
+$VERSION -- those two are the only things inside the block that differ
+between the scripts. apt_ensure differed by one comment line. And the
+TARGET_HOME fallback, used only when getent has no passwd entry for the
+user, was "/home/$user" in curl.sh and "$HOME" in claude.sh; neither is
+right in general, since $HOME is the invoking user's home rather than
+the target's, and root's home is /root and not /home/root. It now picks
+$HOME when the target is us, /root for root, and /home/<user>
+otherwise.
+
+The block is a superset: ask_yn and C_CYAN are used by claude.sh alone,
+and are carried in curl.sh so the two stay identical. C_CYAN needs a
+shellcheck directive to say the unused copy is deliberate.
+
+No behaviour change otherwise, and that is checked rather than assumed:
+list, help, status, doctor and the error paths all produce output
+identical to the previous version once the version string is
+normalised, and both menus were driven over a pty. Doing that caught a
+real bug on the way -- removing the now-duplicated have_systemd took
+the copy inside the shared block with it, and claude.sh status and
+doctor were reporting "have_systemd: command not found".
+```
+
+</details>
+
+### Changed
+
+- The plumbing both scripts share — colours, the message helpers, `ask`,
+  `have`, `as_user`, `require_sudo`, `apt_ensure` — now lives in one block that
+  is byte-identical in `curl.sh` and `claude.sh`, delimited by
+  `# === shared core ===` comments. Edit it in one file and copy it across; the
+  header comment carries the `diff` that checks they have not drifted.
+- When a box has no `passwd` entry for the target user, the guess at their home
+  directory is now `$HOME` if it is our own account, `/root` for root, and
+  `/home/<user>` otherwise. `curl.sh` used to answer `/home/root` for root, and
+  `claude.sh` used to answer with the invoking user's home even when acting on
+  somebody else's account.
+
 ## [4.0.2] - 2026-07-31
 
 ### Commit message

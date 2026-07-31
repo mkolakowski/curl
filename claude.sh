@@ -40,7 +40,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="4.0.2"           # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="4.0.3"           # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 readonly TAB=$'\t'
 
