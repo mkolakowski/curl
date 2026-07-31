@@ -13,6 +13,78 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [4.0.1] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Ask for sudo only where root is actually required
+
+Both scripts reached for sudo in places that did not need it, so a
+password prompt turned up during work that was entirely unprivileged.
+The worst of it: "claude.sh status", which only reads, asked for one.
+
+Four kinds of needless escalation, all removed. own() ran "sudo chown"
+even when running as the owner of the files, which made every registry
+write ask for a password -- toggling yolo on one session prompted for
+one. It now chowns as itself and escalates only if that fails. The
+crontab helpers used "sudo crontab -u you" for your own crontab, which
+is what made status prompt. Two "systemctl status" reads went through
+sudo despite the neighbouring unit_state/unit_enabled helpers being
+deliberately unprivileged so that status and list stay usable without
+it; explaining a failure should not cost a password. And curl.sh probed
+"sudo docker compose version" and ran every stack operation under sudo,
+even though "curl.sh docker" puts you in the docker group precisely so
+that it does not have to.
+
+Escalation is also deferred rather than taken up front. "claude.sh
+sync" asked before checking whether anything needed changing, so a sync
+with nothing to do still cost a password; it now escalates at the first
+real change. Same for the container submenu, where start, stop and
+restart no longer require root at all when docker is reachable as you.
+require_sudo is idempotent once the timestamp is cached, so asking per
+change is not asking repeatedly.
+
+When root is genuinely required the prompt now says what for -- "sudo
+is needed to enable claude-session@site.service" -- printed only when a
+password is really about to be asked for, not on every call.
+
+Stacks created by the old root-running path stay usable: their compose
+file and .env were already chowned to the invoking user, so driving
+them as yourself works, and bind-mounted volumes are the daemon's to
+own either way.
+```
+
+</details>
+
+### Changed
+
+- Container stacks are started, stopped and restarted as you rather than under
+  `sudo` when docker is reachable without it — which is what being in the
+  `docker` group, as `curl.sh docker` arranges, is for. Existing stacks created
+  by the old path are unaffected.
+- When root really is required, the prompt is now preceded by the reason, e.g.
+  `:: sudo is needed to enable claude-session@site.service`. It prints only
+  when a password is actually about to be asked for.
+- `claude.sh sync` and the `curl.sh` container submenu no longer take sudo up
+  front. They escalate at the first change that needs it, so a sync with
+  nothing to do, or a menu you back out of, costs nothing.
+
+### Fixed
+
+- `claude.sh status` no longer asks for a password. It is a read-only command;
+  it was reaching for `sudo crontab -u <you>` to look for a screen-era `@reboot`
+  entry in your own crontab.
+- Changing a session flag from the menu no longer asks for a password. Toggling
+  yolo or remote control touches nothing but the registry, but `own()` ran
+  `sudo chown` on files you already own.
+- `claude.sh doctor` and a failed start no longer ask for a password to print
+  `systemctl status`, which needs no privilege to read.
+- `curl.sh` no longer escalates to probe for `docker compose`, nor to read
+  whether the purplemux service is enabled.
+
 ## [4.0.0] - 2026-07-31
 
 ### Commit message
