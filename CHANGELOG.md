@@ -13,6 +13,62 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [5.0.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Put the docker menu on d, and tick what a selection depends on
+
+The docker menu was reachable two ways: c on the home menu, and c or d
+from inside the installers checklist. The nested one was a leftover
+from when there was no home menu to put it on. It is gone, so the
+docker menu has one door, and that door is d -- the key it already had
+in the checklist. Doctor moves to o.
+
+Selecting an entry now also ticks the catalog entries it needs, and
+says so rather than doing it quietly. Only claude actually depends on
+another entry, and that one is git, which provision installs before
+anything else. The rest of what these steps pull in -- tmux, curl,
+Node 20+ -- has no entry of its own and so cannot be ticked; those are
+named in a line under the selection instead, so the checklist never
+installs more than it showed you. The container stacks all need docker,
+which their menu now says up front when docker is missing rather than
+mentioning it half way through an install.
+
+Deselecting deliberately does not walk back the other way. Untick
+claude after it pulled in git and git stays ticked, because by then you
+have seen it and may well want it on its own.
+
+Breaking twice over: d on the home menu was doctor and is now the
+docker menu, and c on the home menu no longer does anything. Both
+shipped this morning in 4.1.0, so the window for muscle memory is
+small, but they are still changes to what a keystroke does.
+```
+
+</details>
+
+### Changed
+
+- **Breaking:** `d` on the home menu opens the docker container menu. It was
+  `doctor`, which moves to `o`.
+- **Breaking:** `c` on the home menu no longer does anything. Containers are `d`,
+  or the word `containers` or `docker` spelled out.
+- **Breaking:** the installers checklist no longer has a `c` / `d` shortcut into
+  the docker menu. That menu is on the home menu now, which is the one place it
+  lives.
+- Ticking an entry also ticks any catalog entry it needs, and prints what it
+  added. In practice that is `claude` pulling in `git`. Unticking does not undo
+  it — having seen `git` go on, you may want it regardless.
+- Anything an entry installs that has no catalog entry of its own — `tmux`,
+  `curl`, Node 20+ — is now named when you select it, so the checklist does not
+  quietly install more than it showed you. This applies to
+  `curl.sh install <name>` as well as the menu.
+- The container menu says docker is not installed, and that installing any stack
+  installs it first, instead of leaving you to find out mid-run.
+
 ## [4.1.0] - 2026-07-31
 
 ### Commit message

@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="4.1.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="5.0.0"          # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -1778,6 +1778,36 @@ PKG_BLURB=(
     "Claude Code + unattended tmux sessions"
 )
 
+# What each entry needs. PKG_NEEDS names other catalog entries, and those get
+# ticked for you when you select something that depends on them. PKG_ALSO names
+# prerequisites that are not in the catalog and so cannot be ticked — they are
+# printed instead, so the checklist never installs more than it showed you.
+#
+# Only claude actually depends on another catalog entry. The rest of what these
+# steps pull in (tmux, curl, Node) has no entry of its own.
+PKG_NEEDS=(
+    ""          # update
+    ""          # git
+    ""          # gh
+    ""          # screen
+    ""          # btop
+    ""          # docker
+    ""          # tailscale
+    ""          # purplemux
+    "git"       # claude — provision installs it before anything else
+)
+PKG_ALSO=(
+    ""                          # update
+    ""                          # git
+    ""                          # gh
+    ""                          # screen
+    ""                          # btop
+    ""                          # docker
+    ""                          # tailscale
+    "Node 20+ and tmux"         # purplemux
+    "tmux and Claude Code"      # claude
+)
+
 # check_<key> prints a short state string; empty output means "not installed".
 check_update()    { printf 'action'; }
 check_git()       { have git       && git --version 2>/dev/null | awk '{print $3}'; }
@@ -2444,6 +2474,8 @@ dc_print_catalog() {
     done
     if have docker && [ -z "$DC_PS_OK" ]; then
         printf '  %s\n' "${C_DIM}state is '?' — reading docker needs a password here, which this table will not ask for${C_RESET}"
+    elif ! have docker; then
+        printf '  %s\n' "${C_YELLOW}docker is not installed — installing any stack installs it first${C_RESET}"
     fi
     printf '\n'
 }
@@ -2506,6 +2538,34 @@ selection_reset() {
     for i in "${!PKG_KEYS[@]}"; do SELECTED[i]=0; done
 }
 
+# Turn entry $1 on, along with anything in the catalog it needs, and say what
+# was added. Selecting something must never grow the list behind your back.
+#
+# Deselecting does NOT walk back the other way: having ticked claude and picked
+# up git, unticking claude leaves git alone, because by then you have seen it
+# and may well want it on its own.
+select_with_deps() {
+    local idx="$1" dep didx
+    [ "${SELECTED[idx]:-0}" = 1 ] && return 0
+    SELECTED[idx]=1
+    for dep in ${PKG_NEEDS[idx]}; do
+        didx="$(pkg_index "$dep")" || continue
+        [ "${SELECTED[didx]:-0}" = 1 ] && continue
+        select_with_deps "$didx"
+        say "also ticked ${C_BOLD}$dep${C_RESET} — ${PKG_KEYS[idx]} needs it"
+    done
+    [ -n "${PKG_ALSO[idx]}" ] && \
+        skip "${PKG_KEYS[idx]} also pulls in ${PKG_ALSO[idx]} (no entry of their own)"
+    return 0
+}
+
+# Toggle, but turning on goes through select_with_deps.
+select_toggle() {
+    local idx="$1"
+    if [ "${SELECTED[idx]:-0}" = 1 ]; then SELECTED[idx]=0
+    else select_with_deps "$idx"; fi
+}
+
 # print_catalog [nomark]  — pad plain text first, then colourise, so escape
 # sequences never throw the column widths off.
 print_catalog() {
@@ -2547,16 +2607,12 @@ picker() {
 
     while true; do
         print_catalog
-        printf '  %s\n' "${C_DIM}numbers toggle · a=all · m=missing only · n=none · c=containers · q=back${C_RESET}"
+        printf '  %s\n' "${C_DIM}numbers toggle · a=all · m=missing only · n=none · q=back${C_RESET}"
         input="$(ask "Install [Enter to confirm]: " '')"
 
         case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
             q|quit|exit) say "Nothing changed."; return 1 ;;
-            # NOT "docker" — that is a catalog entry, and shadowing it here made
-            # the most obvious thing to type open this submenu instead of
-            # ticking the box next to Docker Engine.
-            c|d|containers) docker_menu; catalog_stale; continue ;;
-            a|all)  for idx in "${!PKG_KEYS[@]}"; do SELECTED[idx]=1; done; continue ;;
+            a|all)  for idx in "${!PKG_KEYS[@]}"; do select_with_deps "$idx"; done; continue ;;
             n|none) selection_reset; continue ;;
             m|missing)
                 selection_reset
@@ -2583,12 +2639,12 @@ picker() {
             if printf '%s' "$tok" | grep -qE '^[0-9]+$'; then
                 idx=$((tok - 1))
                 if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#PKG_KEYS[@]}" ]; then
-                    [ "${SELECTED[idx]}" = 1 ] && SELECTED[idx]=0 || SELECTED[idx]=1
+                    select_toggle "$idx"
                 else
                     warn "no entry numbered $tok"
                 fi
             elif idx="$(pkg_index "$tok")"; then
-                [ "${SELECTED[idx]}" = 1 ] && SELECTED[idx]=0 || SELECTED[idx]=1
+                select_toggle "$idx"
             else
                 warn "unknown entry '$tok'"
             fi
@@ -2619,16 +2675,16 @@ select_by_name() {
     local name idx
     for name in "$@"; do
         case "$name" in
-            all)     for idx in "${!PKG_KEYS[@]}"; do SELECTED[idx]=1; done ;;
+            all)     for idx in "${!PKG_KEYS[@]}"; do select_with_deps "$idx"; done ;;
             missing)
                 catalog_fresh
                 for idx in "${!PKG_KEYS[@]}"; do
                     [ "${PKG_KEYS[idx]}" = update ] && continue
-                    [ -z "${CHECK[idx]}" ] && SELECTED[idx]=1
+                    [ -z "${CHECK[idx]}" ] && select_with_deps "$idx"
                 done ;;
             *)
                 if idx="$(pkg_index "$name")"; then
-                    SELECTED[idx]=1
+                    select_with_deps "$idx"
                 else
                     die "unknown package '$name'. Try: curl.sh list"
                 fi ;;
@@ -2747,17 +2803,17 @@ home_menu() {
         dc_rescan
         printf '\n'
         home_row s 'claude sessions' "$(home_summary_sessions)"
-        home_row c 'containers'      "$(home_summary_containers)"
+        home_row d 'containers'      "$(home_summary_containers)"
         home_row i 'installers'      "$(home_summary_installers)"
-        printf '\n  %s\n' "${C_DIM}d = doctor · ? = help · q = quit${C_RESET}"
+        printf '\n  %s\n' "${C_DIM}o = doctor · ? = help · q = quit${C_RESET}"
         input="$(ask "Choice [Enter refreshes]: " '')"
         case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
             '')                 continue ;;
             q|quit|exit)        return 0 ;;
             s|session|sessions) cmd_session ;;
-            c|container|containers) docker_menu; catalog_stale ;;
+            d|docker|container|containers) docker_menu; catalog_stale ;;
             i|install|installers|packages) picker && run_selection; catalog_stale ;;
-            d|doctor)           doctor ;;
+            o|doctor)           doctor ;;
             \?|h|help)          usage ;;
             *)                  warn "unrecognised choice '$input'" ;;
         esac

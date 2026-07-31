@@ -11,10 +11,10 @@ With no arguments you get a menu of three things, each opening its own submenu:
 
 ```
   s   claude sessions  3 running, 0 failed
-  c   containers       1 running, 2 idle
+  d   containers       1 running, 2 idle
   i   installers       8 of 8 installed
 
-  d = doctor · ? = help · q = quit
+  o = doctor · ? = help · q = quit
 Choice [Enter refreshes]:
 ```
 
