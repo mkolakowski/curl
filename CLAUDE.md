@@ -2,6 +2,17 @@
 
 Guidance for Claude Code working in this repository.
 
+## Always commit
+
+**Every change ends in a commit and a push.** Not when asked, not at the end of
+the session — as soon as the change is finished and tested. Never report work as
+done while it exists only in the working tree, and never start a second change
+with the first one uncommitted.
+
+`git status` at the end of a piece of work should be clean. If it is not, the
+work is not finished. See [Commits](#commits) for the message format and the
+reason this is a hard rule rather than a preference.
+
 ## What this is
 
 One standalone bash script, `curl.sh`, run straight off the web with nothing
@@ -121,12 +132,15 @@ Do not hand back shell changes you have only read.
 
 ## Commits
 
-- **Commit each change as soon as it is finished, and push it.** Do not carry
-  on to the next piece of work with the last one uncommitted. One version is one
+- **Always commit, and push, as soon as a change is finished.** This is the rule
+  at the top of this file, repeated here with the reason: one version is one
   commit, so letting several versions pile up in the working tree makes that
-  impossible to honour after the fact: the edits are cumulative in the same
-  files and the intermediate states cannot be reconstructed faithfully. Finish,
-  commit, push, then start the next thing.
+  impossible to honour after the fact. The edits are cumulative in the same
+  files, so the intermediate states cannot be reconstructed faithfully — the
+  history ends up either collapsed into one commit or split into commits that
+  do not run. Finish, commit, push, then start the next thing.
+- Committing is not a separate task to be asked for. A change that is written,
+  tested and left uncommitted is unfinished work, whatever the reply says.
 - Summary line in the imperative, under ~72 characters, no trailing period.
 - Body is wrapped prose explaining *why*, not a restatement of the diff. Call
   out bugs found and fixed along the way.
