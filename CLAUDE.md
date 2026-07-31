@@ -4,10 +4,20 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-Two standalone bash scripts, each run straight off the web with nothing
-installed first: `curl.sh` picks and installs packages, `claude.sh` runs Claude
-Code unattended in `tmux` sessions supervised by a templated systemd unit.
-`archive/` holds superseded scripts and is frozen — never edit anything under it.
+One standalone bash script, `curl.sh`, run straight off the web with nothing
+installed first. It covers three things, each with its own submenu off the home
+menu and its own branch of the CLI:
+
+- **installers** — a checklist of packages (`curl.sh install docker`)
+- **containers** — docker compose stacks under `/opt/stacks`
+  (`curl.sh containers start dockge`)
+- **claude sessions** — Claude Code running unattended in `tmux`, supervised by
+  a templated systemd unit (`curl.sh session add site ~/GitHub/site`)
+
+The session half was a second script, `claude.sh`, until 4.1.0. That file is now
+a compatibility shim that re-execs `curl.sh session "$@"`, so the old URL keeps
+working; it is a dozen lines and should stay that way. `archive/` holds
+superseded scripts and is frozen — never edit anything under it.
 
 ## Keep the changelog
 
@@ -32,10 +42,11 @@ follow-up task.
   "`curl.sh` no longer installs Docker unless you select it" beats "refactored
   `install_docker`".
 - Prefix anything that changes existing behaviour with **Breaking:**.
-- **Bump `VERSION` in both scripts in the same commit.** `curl.sh` and
-  `claude.sh` each carry a `readonly VERSION=` near the top and print it on
-  every run, so a stale constant tells the user the wrong thing about the box
-  they are on. It must equal the newest heading in `CHANGELOG.md`.
+- **Bump `VERSION` in `curl.sh` in the same commit.** It carries a
+  `readonly VERSION=` near the top and prints it on every run, so a stale
+  constant tells the user the wrong thing about the box they are on. It must
+  equal the newest heading in `CHANGELOG.md`. The `claude.sh` shim carries no
+  version of its own — it forwards to `curl.sh`, which prints one.
 - Tagging is optional. If you do tag, the tag is `vX.Y.Z` and matches the
   heading exactly.
 - Purely internal changes with no user-visible effect need no entry, and so no
@@ -110,6 +121,12 @@ Do not hand back shell changes you have only read.
 
 ## Commits
 
+- **Commit each change as soon as it is finished, and push it.** Do not carry
+  on to the next piece of work with the last one uncommitted. One version is one
+  commit, so letting several versions pile up in the working tree makes that
+  impossible to honour after the fact: the edits are cumulative in the same
+  files and the intermediate states cannot be reconstructed faithfully. Finish,
+  commit, push, then start the next thing.
 - Summary line in the imperative, under ~72 characters, no trailing period.
 - Body is wrapped prose explaining *why*, not a restatement of the diff. Call
   out bugs found and fixed along the way.

@@ -1,14 +1,31 @@
 # curl
 
-Two scripts for setting up an Ubuntu box, both meant to be run straight off the
-web with nothing installed first.
+One script for setting up an Ubuntu box, meant to be run straight off the web
+with nothing installed first.
 
-[`curl.sh`](curl.sh) is a checklist of tools — tick what you want, it installs
-them. [`claude.sh`](claude.sh) runs Claude Code unattended: one `tmux` session
-per project folder, started at boot by systemd and restarted if it dies.
+```
+bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh)
+```
 
-They're independent. `curl.sh` can hand off to `claude.sh` if you tick the
-`claude` entry, but neither needs the other to work.
+With no arguments you get a menu of three things, each opening its own submenu:
+
+```
+  s   claude sessions  3 running, 0 failed
+  c   containers       1 running, 2 idle
+  i   installers       8 of 8 installed
+
+  d = doctor · ? = help · q = quit
+Choice [Enter refreshes]:
+```
+
+- **installers** — a checklist of tools; tick what you want, it installs them
+- **containers** — docker compose stacks, managed in place under `/opt/stacks`
+- **claude sessions** — Claude Code unattended: one `tmux` session per project
+  folder, started at boot by systemd and restarted if it dies
+
+The sessions were a separate script, [`claude.sh`](claude.sh), until 4.1.0.
+That URL still works — it forwards to `curl.sh session` — so `claude.sh list`
+and `curl.sh session list` are the same thing.
 
 ## curl.sh — pick your packages
 
@@ -30,7 +47,7 @@ box. Type numbers to toggle things on, hit Enter, and it installs them.
   [x] 6   docker      no            Docker Engine + Compose plugin
   [ ] 7   tailscale   no            mesh VPN
   [x] 8   purplemux   no            web terminal multiplexer for Claude Code
-  [ ] 9   claude      no            Claude Code + boot session (runs claude.sh)
+  [ ] 9   claude      no            Claude Code + unattended tmux sessions
 
   numbers toggle · a=all · m=missing only · n=none · d=docker containers · q=quit
 Install [Enter to confirm]:
@@ -131,11 +148,14 @@ and logging out and back in for the `docker` group to take effect.
 Bare names work as shorthand, so `curl.sh docker` is the same as `curl.sh
 install docker`.
 
-## claude.sh — unattended Claude Code
+## curl.sh session — unattended Claude Code
 
 ```
-bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/claude.sh)
+bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) session
 ```
+
+The old `claude.sh` URL still works and forwards here, so every `claude.sh`
+command below can be spelled either way.
 
 Runs any number of Claude Code sessions on the box — one per project folder,
 each in its own `tmux` session, each started at boot by systemd and restarted if

@@ -13,6 +13,82 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [4.1.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Fold claude.sh into curl.sh behind a home menu
+
+The two scripts installed the same packages, wrote systemd units the
+same way, and neither knew the other had been run. curl.sh purplemux
+and claude.sh install both install tmux. There was one doctor, and it
+could only see half the box.
+
+They are one script now. curl.sh with no arguments opens a menu of
+three: claude sessions, containers, installers. It routes and does
+nothing else -- every action stayed in the submenu it belongs to, so
+the three checklists and the session table are the ones that were there
+before.
+
+Nothing anyone types has to change. All ten CLI collisions between the
+two scripts -- install, add, list, start, stop, restart and friends --
+were one-sided, in that they only collide because claude.sh used those
+words. Moving the session tree under a "session" noun leaves curl.sh's
+own CLI untouched, and claude.sh becomes a shim at the same URL that
+re-execs "curl.sh session $@". So curl.sh install docker and claude.sh
+list both do exactly what they did, and curl.sh session list is the new
+spelling of the second.
+
+Nothing on disk changes either. write_runner, unit_text and
+pmux_unit_text are byte-identical to before the merge and
+RUNNER_VERSION is still 1 -- checked by generating the runner from the
+merged script and diffing it against the one already installed on a
+box, which matched exactly. An existing install sees no rewrite and no
+.new file.
+
+The one visible change is that bare curl.sh opens the menu rather than
+going straight to the installer checklist, which is now one keystroke
+further in at "i".
+```
+
+</details>
+
+### Added
+
+- `curl.sh` with no arguments opens a home menu covering all three domains, each
+  branching to its own submenu:
+
+  ```
+    s   claude sessions  3 running, 0 failed
+    c   containers       1 running, 2 idle
+    i   installers       8 of 8 installed
+
+    d = doctor · ? = help · q = quit
+  Choice [Enter refreshes]:
+  ```
+
+- `curl.sh session <command>` — everything `claude.sh` did. `curl.sh doctor` is
+  also reachable from the top level, since it is the command you want when you
+  do not yet know which half is broken.
+
+### Changed
+
+- **Breaking:** bare `curl.sh` opens the home menu instead of the installer
+  checklist. The checklist is `i` from the menu, or `curl.sh install <name>` and
+  `curl.sh list` as before.
+- `claude.sh` is now a compatibility shim at the same URL. It re-execs
+  `curl.sh session "$@"`, so every `claude.sh` command keeps working unchanged.
+  Prefer the `curl.sh session` spelling; the script's own hints now use it.
+- The `claude` catalog entry no longer hands off to a second script — Claude
+  Code setup is in this file.
+
+### Fixed
+
+- One `doctor` now covers the whole box rather than only the sessions half.
+
 ## [4.0.3] - 2026-07-31
 
 ### Commit message
