@@ -13,6 +13,82 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [4.0.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Make menu keys mean the same thing every time they are drawn
+
+Four menu problems, two of which were reproducible bugs rather than
+matters of taste.
+
+Typing "docker" in the curl.sh checklist opened the container submenu
+instead of ticking the Docker Engine box. The submenu was bound to
+"d|docker|containers", which shadowed the catalog entry of the same
+name, so the most obvious thing a person could type did the one thing
+they had not asked for. The submenu is now c, with d kept as an alias,
+and every catalog entry can be reached by its own name again.
+
+The container table asked for a sudo password while it was drawing
+itself: state was probed with two "sudo docker ps" calls per row, so on
+a box without a cached credential the prompt landed half way down the
+table and mangled it -- before anything privileged had been chosen. It
+now reads docker once per draw, unprivileged first and non-interactive
+sudo second, and prints "?" with an explanation rather than stopping to
+ask. Drawing a table is not a reason to escalate.
+
+The checklist re-probed all nine entries after every keystroke, and two
+of those probes are slow -- "npm root -g" for purplemux is most of a
+second on its own, and the Claude Code check is two login shells. Every
+toggle cost roughly nine tenths of a second of silence. Probes are now
+cached and refreshed only when something may have changed, which takes
+a redraw from ~0.90s to ~0.02s.
+
+The claude.sh manage menu built its entries from the session's state,
+so the numbers moved: 5 was Yolo on a running session and Logs on a
+stopped one, and the default keystroke was Attach in one case and Start
+in the other. Muscle memory toggled the wrong setting. Every action now
+has a fixed key and a fixed position whether or not it currently
+applies; the ones that do not are dimmed and refused with a reason.
+Enter is Back, the only choice that is always safe.
+
+Nothing written to disk changed: write_runner and unit_text are
+byte-identical to 3.0.0 and RUNNER_VERSION is still 1, so upgrading an
+existing box rewrites neither the runner nor the unit.
+```
+
+</details>
+
+### Changed
+
+- **Breaking:** in the `curl.sh` checklist, `c` opens the docker container
+  submenu. `d` still works; `docker` no longer does — it now ticks the Docker
+  Engine entry, as every other catalog name does.
+- **Breaking:** the `claude.sh` manage menu gives every action a fixed key and a
+  fixed number — `a` attach, `s` start, `r` restart, `x` stop, `m` remote
+  control, `y` yolo, `b` start at boot, `l` logs, `q` back — in that order,
+  whatever state the session is in. Actions that do not apply are shown dimmed
+  and refuse with a reason instead of vanishing and renumbering the rest.
+- **Breaking:** pressing Enter in the manage menu is now Back. It used to be
+  whichever action happened to be first, which meant Attach on a running
+  session and Start on a stopped one.
+- The container table prints `?` for a container's state, and says why, when
+  reading docker would need a password.
+
+### Fixed
+
+- `curl.sh` no longer asks for a sudo password in the middle of drawing the
+  container table. It reads docker once per draw, without privileges where it
+  can, and never escalates just to show you a table.
+- Toggling an entry in the `curl.sh` checklist is no longer followed by about a
+  second of silence. The catalog is probed once and re-probed only when
+  something may have changed, so a redraw costs ~0.02s instead of ~0.90s.
+- Typing `docker` in the `curl.sh` checklist ticks the Docker Engine entry
+  instead of opening the container submenu.
+
 ## [3.0.0] - 2026-07-31
 
 ### Commit message
