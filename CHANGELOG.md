@@ -13,6 +13,48 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [4.0.2] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Read the purplemux and claude versions instead of asking for them
+
+Probing the catalog took 0.89s, and 0.75s of that was two entries.
+check_purplemux ran "npm root -g" to find where global packages live,
+which is 0.60s of node startup, and check_claude ran "claude --version"
+inside a login shell for another 0.15s. The checklist redraws after
+every keystroke, so that was the pause after every toggle, and it is
+the reason a menu summarising the whole box would have been too slow to
+be worth having.
+
+Both binaries already say what we were asking them. purplemux is a
+symlink into node_modules, so resolving it finds package.json without
+involving npm at all. claude is a symlink to
+~/.local/share/claude/versions/<version>, so the version is the target
+name -- reading it is a readlink, not a process.
+
+Neither shortcut is load-bearing. purplemux falls back to the two
+well-known node_modules paths and then to "npm root -g" for a layout we
+do not recognise, and claude falls back to running the binary if
+~/.local/bin/claude is missing, is not a symlink, or points somewhere
+that does not look like a version. The catalog prints exactly what it
+printed before -- the output is byte-identical -- in 0.11s instead of
+0.89s.
+```
+
+</details>
+
+### Fixed
+
+- The `curl.sh` checklist appears, and redraws, in about a tenth of a second
+  rather than nine tenths. It was running `npm root -g` and executing
+  `claude --version` in a login shell every time it drew the table, to find out
+  two version numbers both binaries already record in a symlink. The versions
+  shown are unchanged.
+
 ## [4.0.1] - 2026-07-31
 
 ### Commit message
