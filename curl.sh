@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="5.0.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="6.0.0"          # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -2802,15 +2802,15 @@ home_menu() {
         # dc_state reads a cache built in the parent; refresh it once per draw.
         dc_rescan
         printf '\n'
-        home_row s 'claude sessions' "$(home_summary_sessions)"
-        home_row d 'containers'      "$(home_summary_containers)"
+        home_row c 'claude sessions' "$(home_summary_sessions)"
+        home_row d 'Docker'          "$(home_summary_containers)"
         home_row i 'installers'      "$(home_summary_installers)"
         printf '\n  %s\n' "${C_DIM}o = doctor · ? = help · q = quit${C_RESET}"
         input="$(ask "Choice [Enter refreshes]: " '')"
         case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
             '')                 continue ;;
             q|quit|exit)        return 0 ;;
-            s|session|sessions) cmd_session ;;
+            c|session|sessions) cmd_session ;;
             d|docker|container|containers) docker_menu; catalog_stale ;;
             i|install|installers|packages) picker && run_selection; catalog_stale ;;
             o|doctor)           doctor ;;

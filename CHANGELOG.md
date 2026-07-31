@@ -13,6 +13,37 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [6.0.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Key the home menu on c for Claude and d for Docker
+
+The home menu keys were s, d and i, which meant the two you reach for
+most were named after neither of the things they open. c for Claude and
+d for Docker is the pairing that does not need remembering, and the
+containers row now says Docker rather than containers so the label and
+the key agree.
+
+Breaking: s no longer opens the sessions menu -- c does. c opened the
+container menu in 4.1.0 and did nothing in 5.0.0, so this is the third
+thing that key has meant today; anyone with it in their fingers from
+this morning will land on sessions instead. The spelled-out words are
+unchanged, so session, sessions, docker and containers all still work,
+and the letters are matched case-insensitively.
+```
+
+</details>
+
+### Changed
+
+- **Breaking:** `c` on the home menu opens the Claude sessions menu. It was `s`,
+  which no longer does anything.
+- The containers row is labelled `Docker`, so it matches the `d` that opens it.
+
 ## [5.0.0] - 2026-07-31
 
 ### Commit message
