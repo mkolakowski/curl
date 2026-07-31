@@ -5,9 +5,9 @@ Guidance for Claude Code working in this repository.
 ## What this is
 
 Two standalone bash scripts, each run straight off the web with nothing
-installed first: `curl.sh` picks and installs packages, `claude.sh` sets up
-Claude Code in a detached `screen` session. `archive/` holds superseded scripts
-and is frozen — never edit anything under it.
+installed first: `curl.sh` picks and installs packages, `claude.sh` runs Claude
+Code unattended in `tmux` sessions supervised by a templated systemd unit.
+`archive/` holds superseded scripts and is frozen — never edit anything under it.
 
 ## Keep the changelog
 
@@ -75,8 +75,8 @@ need two commits, it needs two version headings.
 
 ## Shell conventions
 
-- Target bash on Ubuntu. The generated `claude-session-boot.sh` and any git
-  hooks are POSIX `sh`.
+- Target bash on Ubuntu. The generated `claude-session-run.sh` and any git hooks
+  are POSIX `sh` — test them with `sh -n` and `shellcheck -s sh`, not bash.
 - `set -uo pipefail` — deliberately not `-e`. These scripts report failures per
   step and carry on rather than dying halfway through a provisioning run.
 - Both scripts must stay runnable as `bash <(curl -Ss .../script.sh)`. Read
@@ -98,8 +98,13 @@ Do not hand back shell changes you have only read.
 - `bash -n` and `shellcheck -S style` must be clean, both for the scripts and
   for any script they generate.
 - Exercise the change. Interactive menus get driven over a pty, session handling
-  gets a real `screen` session, crontab edits get tested against a crontab that
+  gets a real `tmux` session, generated systemd units get `systemd-analyze
+  verify`, and anything that edits a crontab gets tested against a crontab that
   already contains unrelated entries.
+- Check tmux target syntax by running it, not by reading it. `=name` is a
+  *session* target: `has-session` and `kill-session` take it, but `capture-pane`
+  and `pipe-pane` want a *pane* and fail with "can't find pane" — silently, once
+  stderr is discarded. Those need `=name:`.
 - Test the upgrade path, not just the fresh install. Someone already has the
   previous version's files, cron entries and config on a box.
 

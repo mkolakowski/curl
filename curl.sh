@@ -19,7 +19,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="2.12.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="3.0.0"          # keep in step with the top entry of CHANGELOG.md
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 RAW_BASE="${CURL_SH_RAW_BASE:-https://raw.githubusercontent.com/mkolakowski/curl/main}"
 
@@ -66,6 +66,11 @@ else
     SUDO='sudo'
     TARGET_USER="$(id -un)"
 fi
+
+# Needed by the purplemux unit: systemd starts services with a bare PATH that
+# does not include ~/.local/bin, where Claude Code lives.
+TARGET_HOME="$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)"
+[ -n "$TARGET_HOME" ] || TARGET_HOME="/home/$TARGET_USER"
 
 as_user() {
     if [ "$(id -un)" = "$TARGET_USER" ]; then
@@ -306,6 +311,79 @@ ensure_node() {
     ok "node $(node -v 2>/dev/null) installed"
 }
 
+# ------------------------------------------------------- purplemux as a unit --
+# `purplemux` with no arguments (or `purplemux start`) runs the server in the
+# foreground, which is exactly what Type=simple wants. Its state lives in
+# ~/.purplemux, so the unit has to run as the invoking user rather than root.
+PMUX_UNIT=/etc/systemd/system/purplemux.service
+PMUX_PORT="${CURL_SH_PMUX_PORT:-8022}"
+
+have_systemd() { have systemctl && [ -d /run/systemd/system ]; }
+
+pmux_unit_text() {
+    local exec; exec="$(command -v purplemux 2>/dev/null)"
+    [ -n "$exec" ] || exec="/usr/bin/env purplemux"
+    cat <<UNIT
+[Unit]
+Description=purplemux — web terminal multiplexer for Claude Code
+Documentation=https://github.com/subicura/purplemux
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$TARGET_USER
+Environment=NODE_ENV=production
+Environment=PMUX_PORT=$PMUX_PORT
+# purplemux looks for Claude Code at ~/.local/bin/claude, which is not on the
+# default systemd PATH.
+Environment=PATH=$TARGET_HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=$TARGET_HOME
+ExecStart=$exec start
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+# Write /etc/systemd/system/purplemux.service and enable it. An existing unit
+# that differs is backed up rather than silently overwritten — someone may have
+# hand-tuned the port or the environment.
+install_purplemux_service() {
+    have_systemd || { warn "no systemd here — skipping the service"; return 1; }
+
+    local tmp; tmp="$(mktemp)"
+    pmux_unit_text > "$tmp"
+
+    if [ -f "$PMUX_UNIT" ] && cmp -s "$tmp" "$PMUX_UNIT"; then
+        skip "$PMUX_UNIT already up to date"
+    else
+        if [ -f "$PMUX_UNIT" ]; then
+            $SUDO cp -p "$PMUX_UNIT" "$PMUX_UNIT.bak" \
+                && warn "kept your existing unit as $PMUX_UNIT.bak"
+        fi
+        $SUDO install -m 0644 "$tmp" "$PMUX_UNIT" \
+            || { rm -f "$tmp"; warn "could not write $PMUX_UNIT"; return 1; }
+        ok "wrote $PMUX_UNIT (runs as $TARGET_USER on port $PMUX_PORT)"
+    fi
+    rm -f "$tmp"
+
+    $SUDO systemctl daemon-reload >/dev/null 2>&1
+    if $SUDO systemctl enable --now purplemux >/dev/null 2>&1; then
+        ok "purplemux service enabled and started"
+    else
+        warn "enable failed — check: systemctl status purplemux"
+        return 1
+    fi
+
+    skip "first run needs onboarding in a browser: http://localhost:$PMUX_PORT"
+    skip "it advertises the machine IP — reach it over Tailscale rather than opening the port"
+}
+
 install_purplemux() {
     if have purplemux; then
         skip "purplemux $(check_purplemux) already installed"
@@ -321,7 +399,24 @@ install_purplemux() {
         have purplemux || { warn "purplemux is not on PATH after install"; return 1; }
         ok "purplemux $(check_purplemux) installed"
     fi
-    skip "start it with: purplemux   (then open http://localhost:8022)"
+
+    # Running it by hand is fine, but it only survives as long as the terminal
+    # does. Offer the unit rather than installing it unasked — plenty of people
+    # want to try it once before committing the box to it.
+    if ! have_systemd; then
+        skip "start it with: purplemux   (then open http://localhost:$PMUX_PORT)"
+    elif $SUDO systemctl is-enabled purplemux >/dev/null 2>&1; then
+        skip "already enabled as a systemd service"
+        install_purplemux_service
+    else
+        local reply
+        reply="$(ask "  also run it as a service, started at boot? [y/N] " n)"
+        case "${reply,,}" in
+            y|yes) install_purplemux_service ;;
+            *)     skip "start it with: purplemux   (then open http://localhost:$PMUX_PORT)"
+                   skip "the service can be added later: curl.sh purplemux-service" ;;
+        esac
+    fi
 }
 
 install_tailscale() {
@@ -810,6 +905,7 @@ usage() {
 	                      docker container stacks: cloudflared, beszel-agent,
 	                      dockge. No arguments opens the checklist; a bare verb
 	                      acts on every installed stack.
+	  purplemux-service   write and enable the purplemux systemd unit
 	  update              apt update + full-upgrade only
 	  reboot              reboot the machine
 	  version             print the version and exit
@@ -820,6 +916,7 @@ usage() {
 
 	${C_BOLD}Environment${C_RESET}
 	  CURL_SH_STACKS_DIR  where compose stacks are written (now: $STACKS_DIR)
+	  CURL_SH_PMUX_PORT   port for the purplemux service (now: $PMUX_PORT)
 	  ASSUME_YES=1        never prompt, take the defaults
 	  NO_COLOR=1          plain output
 
@@ -872,6 +969,10 @@ main() {
                 return $rc
             fi
             docker_menu ;;
+        purplemux-service)
+            have purplemux || die "purplemux is not installed. Try: curl.sh purplemux"
+            require_sudo
+            install_purplemux_service ;;
         update)         require_sudo; install_update ;;
         reboot)         say "Rebooting…"; $SUDO reboot ;;
         help|-h|--help) usage ;;

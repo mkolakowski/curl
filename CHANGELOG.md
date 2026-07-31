@@ -13,6 +13,186 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [3.0.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Run sessions in tmux under systemd instead of screen under cron
+
+Sessions were started by an @reboot crontab entry into detached screen
+sessions. Cron fires once, so anything that died stayed dead until
+somebody noticed and ran the script again -- on an unattended box that
+is the whole failure mode, not an edge case. There was also nothing
+supervising a session, no way to ask why one was not running, and
+sessions stopped at permission prompts nobody was there to answer.
+
+Sessions now run in tmux, one per project folder as claude-<name>, and
+are started by a single templated unit, claude-session@<name>.service.
+Adding a project is a line in ~/.config/claude-sessions.conf plus
+"claude.sh sync", which enables the units for everything marked
+autostart, disables the rest, and retires units for sessions that have
+been deleted. There is one unit file no matter how many projects.
+
+ExecStart is a wrapper that creates the tmux session and then blocks
+for as long as it lives, so the unit is Type=simple with
+Restart=always. Type=forking cannot work here: tmux double-forks to its
+server and systemd loses track of what it is watching almost at once.
+With a blocking wrapper the session ending IS the process exiting.
+Restart loops are bounded two ways -- the wrapper exits 78 for anything
+restarting cannot fix, which RestartPreventExitStatus stops dead, and
+StartLimitBurst catches the rest.
+
+Sessions default to --dangerously-skip-permissions, since a session
+that stalls at a prompt on an unattended box stalls for good. Mark one
+noyolo to opt out; the table prints a yellow NO so it is never a
+surprise. Auth is assumed to have been done once by hand: the script
+never prompts for credentials, and the unit reads an optional
+EnvironmentFile for ANTHROPIC_API_KEY.
+
+Upgrading migrates automatically and "claude.sh migrate" does it on
+demand: our @reboot line goes (other crontab entries are untouched),
+the old boot script is retired rather than deleted, and screen sessions
+named after registered projects are stopped. The registry carries over
+as it is.
+
+Fixes found along the way. "claude.sh new" and n in the menu called
+new_session_interactive, which did not exist anywhere -- both died with
+"command not found"; the wizard is now written. capture-pane was being
+given "=name", which is session syntax and which it rejects with "can't
+find pane", so remote verification and doctor could only ever report
+"could not confirm" -- pane targets need the trailing colon. And a
+session that died on startup left nothing behind at all, because
+pipe-pane only captures from the moment it attaches: the pane now
+outlives its command by five seconds and prints the exit status, and
+the last screen is kept on disk alongside the log.
+```
+
+</details>
+
+### Added
+
+- `claude.sh sync` makes systemd match the registry after you edit it by hand:
+  enables the `autostart` sessions, disables the rest, and retires units for
+  sessions you have removed — those would otherwise come back on the next boot
+  and fail. Also on the menu as `y`.
+- `yolo` / `noyolo` per session, and `claude.sh yolo <name> on|off`. New
+  sessions get `--dangerously-skip-permissions` by default, because a session
+  that stops at a permission prompt on an unattended box stops for good. The
+  table prints a yellow `NO` for any session without it.
+- `claude.sh autostart <name> on|off`, so boot behaviour is changeable without
+  editing the file.
+- `claude.sh logs [name]` tails what a session has printed, and `Logs` is an
+  entry in the per-session menu.
+- `claude.sh migrate` clears screen-era leftovers on demand.
+- The unit reads `~/.config/claude-sessions.env` and `/etc/claude-sessions.env`
+  if they exist, for `ANTHROPIC_API_KEY` on a box with no claude.ai login.
+  Neither file is created for you.
+- `claude.sh new` — the wizard the menu and `claude.sh new` have been advertising
+  all along. See Fixed.
+
+### Changed
+
+- **Breaking:** sessions run in `tmux`, not `screen`. Attach with `tmux attach -t
+  claude-<name>` and detach with `Ctrl-b d`, not `Ctrl-a d`. `claude.sh attach`
+  still works and still crosses the sudo boundary for you; `enter` remains as an
+  alias.
+- **Breaking:** boot is a templated systemd unit,
+  `claude-session@<name>.service`, not an `@reboot` crontab entry. Sessions are
+  supervised, so one that dies comes back on its own — `Restart=always` on a
+  `Type=simple` wrapper that blocks for as long as the session lives.
+  `systemctl status`, `systemctl restart` and `journalctl -u` work on any
+  session.
+- **Breaking:** `claude.sh install` installs `tmux` rather than `screen` and
+  `cron`. Neither is removed from the box; `curl.sh` still offers `screen`.
+- **Breaking:** `start`, `stop` and `restart` now need `sudo`, because they go
+  through systemd. `list`, `status` and `attach` still do not.
+- Upgrading migrates automatically: our `@reboot` line is removed and everything
+  else in the crontab is left alone, `claude-session-boot.sh` is retired to
+  `.retired` rather than deleted, and screen sessions named after registered
+  projects are stopped. Screen sessions we do not recognise are not touched.
+- The runner is a stub with the same edit-block and checksum handling as the old
+  boot script — upgraded in place while untouched, never overwritten once edited.
+- `status` and `doctor` report unit state, whether the unit is enabled, and
+  whether auth is a claude.ai login or an API key. `doctor` no longer shells out
+  to `claude doctor`, which was the slowest thing it did.
+- The Remote Control preflight says "up to 35s" rather than "a few seconds", and
+  its two probes are capped at 20s and 15s rather than 30s and 25s.
+- Both scripts now report version 3.0.0.
+
+### Fixed
+
+- `claude.sh new`, and `n` in the menu, called `new_session_interactive` — a
+  function that was never defined. Both failed with `new_session_interactive:
+  command not found`. The wizard now exists, and asks for the directory, an
+  optional GitHub clone, autostart, yolo and Remote Control mode.
+- Remote Control verification and `doctor` passed `=<name>` to `capture-pane`.
+  That is *session* target syntax; `capture-pane` wants a *pane* and rejects it
+  with "can't find pane", invisibly once stderr is discarded. So a working
+  remote session could only ever be reported as "could not confirm". Pane
+  targets now carry the trailing colon.
+- A session that died on startup left nothing to diagnose: `pipe-pane` only
+  captures from the moment it attaches, which is too late. The pane now outlives
+  its command by five seconds and prints its exit status, and the last screen is
+  kept in `~/.local/state/claude-sessions/<name>.screen`.
+- Session logs are rotated at 5 MB. With `Restart=always` appending to one file,
+  they had nothing stopping them.
+
+## [2.13.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Offer to run purplemux as a systemd service after installing it
+
+Installing purplemux got you the binary and nothing else. Started by
+hand it lives only as long as the terminal you started it in, so a box
+came back from a reboot with no purplemux running on it and no hint
+that there was anything to restart.
+
+The purplemux entry now finishes by asking whether to run it as a
+service. Yes writes /etc/systemd/system/purplemux.service and enables
+it; no writes nothing and points at "curl.sh purplemux-service" for
+later. The answer defaults to no, so an unattended run behaves exactly
+as it did before and nothing is installed unasked.
+
+The unit runs as the invoking user rather than as root, because
+purplemux keeps its config, workspaces and CLI token in ~/.purplemux,
+and it sets a PATH that includes ~/.local/bin -- Claude Code lives
+there and systemd does not look there by default, which would have
+left purplemux running but unable to find the thing it exists to
+multiplex. An existing unit that differs is kept as
+purplemux.service.bak rather than overwritten, since the port or the
+environment may have been tuned by hand. CURL_SH_PMUX_PORT picks a
+port other than 8022.
+```
+
+</details>
+
+### Added
+
+- Installing `purplemux` now asks whether to also run it as a service. Saying
+  yes writes `/etc/systemd/system/purplemux.service` and enables it, so
+  purplemux comes back after a reboot. Saying no writes nothing.
+- `curl.sh purplemux-service` writes and enables the unit on its own, for when
+  you said no the first time or purplemux was already installed.
+- `CURL_SH_PMUX_PORT` sets the port the service listens on (default 8022).
+
+### Changed
+
+- The unit runs as the invoking user, not as root — purplemux keeps its config,
+  workspaces and CLI token in `~/.purplemux` — and carries a `PATH` including
+  `~/.local/bin` so it can find Claude Code, which systemd's default `PATH`
+  would have hidden from it.
+- An existing `purplemux.service` that differs from the one we write is kept as
+  `purplemux.service.bak` instead of being overwritten.
+- The prompt defaults to no, so `ASSUME_YES=1` and any other non-interactive run
+  installs purplemux exactly as it did before and writes no unit.
+
 ## [2.12.0] - 2026-07-30
 
 ### Commit message
