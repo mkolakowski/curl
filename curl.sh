@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="6.0.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="7.0.0"          # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -46,16 +46,10 @@ readonly EX_CONFIG=78
 readonly CRON_MARKER="# claude-session-boot (managed by claude.sh)"
 readonly CRON_MARKER_LEGACY="# claude-session-boot (managed by curl.sh)"
 
-# ============================================================== shared core ===
-# Everything from here to "end shared core" is byte-identical in curl.sh and
-# claude.sh, so that merging the two is a copy rather than a reconciliation.
-# Change it in one file and copy it across. To check the two have not drifted:
-#
-#   core() { sed -n '/^# =* shared core =*$/,/^# =* end shared core =*$/p' "$1"; }
-#   diff <(core curl.sh) <(core claude.sh)
-#
-# $SCRIPT_NAME and $VERSION are set above this block, and are the only things
-# in here that differ between the two scripts.
+# ------------------------------------------------------------------ plumbing --
+# This was a block kept byte-identical between curl.sh and claude.sh so the two
+# could be merged by copying rather than reconciling. That merge has happened
+# and claude.sh is a shim, so it is just the plumbing now.
 
 # C_CYAN is used by claude.sh and not by curl.sh. This block is shared
 # verbatim, so the unused one is deliberate rather than a leftover.
@@ -83,6 +77,41 @@ ask() {
     fi
     read -r -p "$prompt" reply < /dev/tty || reply=''
     printf '%s\n' "${reply:-$default}"
+}
+
+# Read ONE keypress from the controlling terminal — no Enter. For menus where
+# every choice is a single character; anything taking a number, a list or a name
+# still needs ask(), which reads a line.
+#
+# Prints the key lowercased. Enter comes back empty. Reads and writes /dev/tty
+# directly for the same reason ask() does: stdin may be the script itself.
+ask_key() {
+    local prompt="$1" key=''
+    if [ -n "${ASSUME_YES:-}" ] || [ ! -r /dev/tty ]; then
+        printf '\n'
+        return 0
+    fi
+    printf '%s' "$prompt" > /dev/tty
+    # -s, then echo it back ourselves: without that the screen redraws with no
+    # record of what was pressed.
+    if ! IFS= read -rsn1 key < /dev/tty; then
+        # EOF or a closed terminal. Returning empty would refresh forever, so
+        # ask to leave instead.
+        printf '\n' > /dev/tty
+        printf 'q'
+        return 0
+    fi
+    # Arrow and function keys arrive as ESC plus two or more bytes. Swallow the
+    # rest rather than acting on them as further keystrokes.
+    if [ "$key" = $'\033' ]; then
+        read -rsn2 -t 0.1 _ < /dev/tty 2>/dev/null || true
+        key=''
+    fi
+    printf '%s\n' "$key" > /dev/tty
+    # Anything typed fast behind the key — someone spelling out "docker" — would
+    # otherwise be read by whichever submenu opens next. Drop it.
+    read -rsn64 -t 0.01 _ < /dev/tty 2>/dev/null || true
+    printf '%s' "$key" | tr '[:upper:]' '[:lower:]'
 }
 
 ask_yn() {
@@ -166,7 +195,6 @@ apt_ensure() {
         warn "could not install $* via apt"; return 1
     fi
 }
-# ========================================================== end shared core ===
 
 # ============================================================ claude sessions ==
 # Everything from here to "end claude sessions" was claude.sh, which is now a
@@ -2806,16 +2834,19 @@ home_menu() {
         home_row d 'Docker'          "$(home_summary_containers)"
         home_row i 'installers'      "$(home_summary_installers)"
         printf '\n  %s\n' "${C_DIM}o = doctor · ? = help · q = quit${C_RESET}"
-        input="$(ask "Choice [Enter refreshes]: " '')"
-        case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
-            '')                 continue ;;
-            q|quit|exit)        return 0 ;;
-            c|session|sessions) cmd_session ;;
-            d|docker|container|containers) docker_menu; catalog_stale ;;
-            i|install|installers|packages) picker && run_selection; catalog_stale ;;
-            o|doctor)           doctor ;;
-            \?|h|help)          usage ;;
-            *)                  warn "unrecognised choice '$input'" ;;
+        # One keypress, no Enter. Every choice here is a single character, so
+        # asking for Enter as well was a keystroke that bought nothing. The
+        # submenus still read a line, because they take numbers and lists.
+        input="$(ask_key "Choice: ")"
+        case "$input" in
+            '')  continue ;;
+            q)   return 0 ;;
+            c)   cmd_session ;;
+            d)   docker_menu; catalog_stale ;;
+            i)   picker && run_selection; catalog_stale ;;
+            o)   doctor ;;
+            \?|h) usage ;;
+            *)   warn "unrecognised choice '$input'" ;;
         esac
     done
 }

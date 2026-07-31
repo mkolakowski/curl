@@ -15,8 +15,12 @@ With no arguments you get a menu of three things, each opening its own submenu:
   i   installers       8 of 8 installed
 
   o = doctor · ? = help · q = quit
-Choice [Enter refreshes]:
+Choice:
 ```
+
+One keypress, no Enter — `c`, `d`, `i`, `o` and `q` act as soon as you press
+them. Enter on its own redraws. The submenus still read a line, because they
+take numbers and lists like `2,4,5`.
 
 - **installers** — a checklist of tools; tick what you want, it installs them
 - **containers** — docker compose stacks, managed in place under `/opt/stacks`

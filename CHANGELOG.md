@@ -13,6 +13,60 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [7.0.0] - 2026-07-31
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Act on a single keypress at the home menu
+
+Every choice on the home menu is one character, so asking for Enter as
+well was a keystroke that bought nothing. c, d, i, o and q now act the
+moment they are pressed. Enter on its own still redraws.
+
+The submenus are untouched and still read a line, because they take
+numbers and lists like "2,4,5" -- a menu whose answers vary in length
+cannot act on the first character.
+
+Reading one key rather than a line brings two problems worth handling
+rather than discovering later. Arrow and function keys arrive as escape
+plus two or more bytes, which would otherwise be read as several
+keystrokes in a row; the rest of the sequence is swallowed. And
+anything typed quickly behind the key -- somebody spelling out "docker"
+out of habit -- would be waiting in the buffer for whichever submenu
+opened next; the buffer is drained. Both are tested by driving a pty.
+
+Breaking: the spelled-out words are gone from this menu. "docker",
+"sessions" and "help" were accepted when it read a line and cannot be
+now. The letters still work either case.
+
+Also drops the "shared core" markers, which claimed the block between
+them was byte-identical with claude.sh. That stopped being true in
+4.1.0 when claude.sh became a shim, and the diff recipe in the comment
+had nothing left to compare against.
+```
+
+</details>
+
+### Changed
+
+- **Breaking:** the home menu acts on a single keypress. `c`, `d`, `i`, `o` and
+  `q` no longer need Enter behind them, and Enter on its own redraws the menu.
+- **Breaking:** the home menu no longer accepts spelled-out words. `docker`,
+  `containers`, `sessions`, `installers` and `help` worked when it read a whole
+  line; it reads one key now. The letters are unchanged and work in either case.
+- The submenus are unchanged and still read a line, since they take numbers and
+  lists like `2,4,5`.
+
+### Fixed
+
+- Pressing an arrow key at the home menu no longer registers as two or three
+  separate choices.
+- Typing a word out of habit — `docker` rather than `d` — no longer leaves the
+  rest of it waiting in the buffer for the submenu that just opened.
+
 ## [6.0.0] - 2026-07-31
 
 ### Commit message
