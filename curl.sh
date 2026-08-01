@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="8.0.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="9.0.0"          # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -2529,35 +2529,36 @@ docker_menu() {
         return 1
     fi
     dc_reset
-    local input tok idx count
+    local input idx
     while true; do
         # One "docker ps -a" per draw keeps the table live without the six
         # privileged calls the old per-row probe made.
         dc_rescan
         printf '%s' "${C_BOLD}Docker containers${C_RESET}"
         dc_print_catalog
-        printf '  %s\n' "${C_DIM}stacks live in $STACKS_DIR · numbers toggle · a=all · n=none${C_RESET}"
-        printf '  %s\n' "${C_DIM}Enter=install · s=start · x=stop · r=restart · q=back${C_RESET}"
-        input="$(ask "Choice [Enter to install]: " '')"
-        case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
-            q|quit|back) return 0 ;;
-            a|all)  for idx in "${!DC_KEYS[@]}"; do DC_SELECTED[idx]=1; done; continue ;;
-            n|none) dc_reset; continue ;;
-            '')        dc_apply install && dc_reset; continue ;;
-            s|start)   dc_apply start   && dc_reset; continue ;;
-            x|stop)    dc_apply stop    && dc_reset; continue ;;
-            r|restart) dc_apply restart && dc_reset; continue ;;
-        esac
-        for tok in $(printf '%s' "$input" | tr ',' ' '); do
-            if printf '%s' "$tok" | grep -qE '^[0-9]+$'; then
-                idx=$((tok - 1))
-                if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#DC_KEYS[@]}" ]; then
+        printf '  %s\n' "${C_DIM}stacks live in $STACKS_DIR · 1-9 toggles · a = all · n = none${C_RESET}"
+        printf '  %s\n' "${C_DIM}i = install · s = start · x = stop · r = restart · q = back${C_RESET}"
+        # Install is "i", not Enter. Enter used to mean install here, which was
+        # fine when this menu read a whole line and you had to mean it. Acting
+        # on one keypress makes a stray Enter an install, and Enter is harmless
+        # everywhere else in this script — so it redraws here too.
+        input="$(ask_key "Choice: ")"
+        case "$input" in
+            '')  continue ;;
+            q)   return 0 ;;
+            a)   for idx in "${!DC_KEYS[@]}"; do DC_SELECTED[idx]=1; done ;;
+            n)   dc_reset ;;
+            i)   dc_apply install && dc_reset ;;
+            s)   dc_apply start   && dc_reset ;;
+            x)   dc_apply stop    && dc_reset ;;
+            r)   dc_apply restart && dc_reset ;;
+            [1-9])
+                idx=$((input - 1))
+                if [ "$idx" -lt "${#DC_KEYS[@]}" ]; then
                     [ "${DC_SELECTED[idx]}" = 1 ] && DC_SELECTED[idx]=0 || DC_SELECTED[idx]=1
-                else warn "no entry numbered $tok"; fi
-            elif idx="$(dc_index "$tok")"; then
-                [ "${DC_SELECTED[idx]}" = 1 ] && DC_SELECTED[idx]=0 || DC_SELECTED[idx]=1
-            else warn "unknown container '$tok'"; fi
-        done
+                else warn "no entry numbered $input"; fi ;;
+            *)   warn "unrecognised choice '$input'" ;;
+        esac
     done
 }
 

@@ -53,7 +53,7 @@ box. Type numbers to toggle things on, hit Enter, and it installs them.
   [x] 8   purplemux   no            web terminal multiplexer for Claude Code
   [ ] 9   claude      no            Claude Code + unattended tmux sessions
 
-  numbers toggle · a=all · m=missing only · n=none · d=docker containers · q=quit
+  numbers toggle · a=all · m=missing only · n=none · q=back
 Install [Enter to confirm]:
 ```
 
@@ -121,8 +121,10 @@ stopped, and the script tells you which file to finish. Docker itself is
 installed first if it isn't already there.
 
 Ticked containers can also be started, stopped and restarted from the same
-screen — `Enter` installs, `s` starts, `x` stops, `r` restarts — so the submenu
-manages a stack for its whole life, not just the first five minutes. The same
+screen — `i` installs, `s` starts, `x` stops, `r` restarts — so the submenu
+manages a stack for its whole life, not just the first five minutes. It acts on
+a single keypress: `1`-`9` tick a stack, `a` ticks all, `n` clears, Enter
+redraws and `q` goes back, so nothing runs unless you press its letter. The same
 verbs work on the command line, and a bare verb acts on every installed stack:
 
 ```

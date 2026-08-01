@@ -13,6 +13,55 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [9.0.0] - 2026-08-01
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Act on a single keypress in the docker menu, and install on i
+
+The docker menu was the last of the three that still wanted Enter
+behind a choice. It acts on the keypress now, like the home menu and
+the session menus before it.
+
+Install moved from Enter to i, which is the part worth explaining.
+Enter meaning install was fine while this menu read a whole line: you
+had to type your selection and then deliberately submit it. Acting on
+one keypress makes a stray Enter an install of everything ticked, and
+Enter is harmless everywhere else in this script -- it redraws, or it
+goes back. Having exactly one menu where it starts pulling images is
+the kind of inconsistency that gets somebody eventually. So Enter
+redraws here too and install has a letter like the other three verbs.
+
+The cost is the same one the session table paid: one key is one digit,
+and the comma lists and stack names that a line read allowed are gone.
+Three stacks fit in 1-9 with room to spare, and the command line still
+takes names -- curl.sh containers dockge -- so nothing is unreachable.
+
+Also fixes the README, which still showed a d=docker containers
+shortcut in the installers checklist. That was removed in 5.0.0.
+```
+
+</details>
+
+### Changed
+
+- **Breaking:** the docker container menu acts on a single keypress. `1`–`9`
+  tick a stack, `a` ticks all, `n` clears.
+- **Breaking:** `i` installs the ticked stacks. Enter used to, and now redraws
+  the table like it does in every other menu — so nothing runs unless you press
+  the letter for it.
+- **Breaking:** stacks can no longer be ticked by typing their name or a comma
+  list. `curl.sh containers <name>` still takes names.
+
+### Fixed
+
+- The README showed a `d=docker containers` shortcut in the installers
+  checklist. That shortcut was removed in 5.0.0, and the footer alongside it
+  still said `q=quit` rather than `q=back`.
+
 ## [8.0.0] - 2026-08-01
 
 ### Commit message
