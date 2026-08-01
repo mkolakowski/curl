@@ -10,9 +10,9 @@ bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh)
 With no arguments you get a menu of three things, each opening its own submenu:
 
 ```
-  c   claude sessions  3 running, 0 failed
+  c   Claude sessions  3 running, 0 failed
   d   Docker           1 running, 2 idle
-  i   installers       8 of 8 installed
+  i   Installers       8 of 8 installed
 
   o = doctor · ? = help · q = quit
 Choice:

@@ -13,6 +13,54 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [8.0.0] - 2026-08-01
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Act on a single keypress in the session menus too
+
+The home menu stopped needing Enter in 7.0.0 and the session menus did
+not, which made moving between them feel like two different programs.
+Both now act on the keypress: the session table, and the per-session
+menu you reach from it.
+
+The per-session menu was the easy one -- every entry there is already a
+single character, a digit or a letter, so nothing had to give. Enter
+stays what it was, back, rather than becoming a redraw: that menu does
+one thing and returns, so there is nothing to redraw into.
+
+The session table cost something. It used to take a whole line, so a
+session could be picked by number of any length or typed by name. One
+key means one digit, so a tenth session cannot be picked from the table
+at all. Rather than leave that to be found out, the table says so when
+there are more than nine, and points at "curl.sh session <name>", which
+still opens any session by name however many there are.
+
+Also capitalises Claude and Installers on the home menu, so the three
+rows read as the proper nouns they are.
+```
+
+</details>
+
+### Changed
+
+- **Breaking:** the Claude sessions table and the per-session menu act on a
+  single keypress. Neither needs Enter behind a choice any more.
+- **Breaking:** sessions can no longer be picked from the table by typing their
+  name, and only `1`–`9` select by number. Any session, at any position, is
+  still reachable as `curl.sh session <name>`.
+- Enter in the sessions table redraws it, matching the home menu. Enter in the
+  per-session menu is still `back`.
+- The home menu rows read `Claude sessions`, `Docker` and `Installers`.
+
+### Added
+
+- The sessions table warns when there are more than nine sessions, naming the
+  spelling that reaches the ones the number keys cannot.
+
 ## [7.0.0] - 2026-07-31
 
 ### Commit message

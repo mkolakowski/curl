@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="7.0.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="8.0.0"          # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -891,29 +891,32 @@ manage_one() {
     # "back" is the only choice that is always safe and always available, so it
     # is what a stray Enter does. Nothing that starts, stops or attaches sits
     # under a blank keystroke.
-    choice="$(ask "Choice [q]: " q)"
+    # Every entry here is one character, number or letter, so one keypress is
+    # enough. Enter stays what it was — back — rather than becoming a redraw:
+    # this menu does one thing and returns, so there is nothing to redraw into.
+    choice="$(ask_key "Choice [Enter = back]: ")"
     printf '\n'
 
     local key='' idx=-1 act=''
-    if printf '%s' "$choice" | grep -qE '^[0-9]+$'; then
-        if [ "$choice" -ge 1 ] && [ "$choice" -le "${#MO_KEYS[@]}" ]; then
-            idx=$((choice - 1)); key="${MO_KEYS[idx]}"
-        else
-            warn "no entry numbered $choice"; return 0
-        fi
-    else
-        case "$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')" in
-            ''|q|back|quit)     key=q ;;
-            a|attach|enter|e)   key=a ;;
-            s|start)            key=s ;;
-            r|restart)          key=r ;;
-            x|k|stop|kill)      key=x ;;
-            m|remote)           key=m ;;
-            y|yolo)             key=y ;;
-            b|boot|autostart)   key=b ;;
-            l|log|logs)         key=l ;;
-            *)                  warn "unrecognised choice '$choice'"; return 0 ;;
-        esac
+    case "$choice" in
+        [0-9])
+            if [ "$choice" -ge 1 ] && [ "$choice" -le "${#MO_KEYS[@]}" ]; then
+                idx=$((choice - 1)); key="${MO_KEYS[idx]}"
+            else
+                warn "no entry numbered $choice"; return 0
+            fi ;;
+        ''|q) key=q ;;
+        a|e)  key=a ;;
+        s)    key=s ;;
+        r)    key=r ;;
+        x|k)  key=x ;;
+        m)    key=m ;;
+        y)    key=y ;;
+        b)    key=b ;;
+        l)    key=l ;;
+        *)    warn "unrecognised choice '$choice'"; return 0 ;;
+    esac
+    if [ "$idx" -lt 0 ]; then
         for i in "${!MO_KEYS[@]}"; do
             [ "${MO_KEYS[i]}" = "$key" ] && { idx=$i; break; }
         done
@@ -975,25 +978,26 @@ session_menu() {
     local input name
     while true; do
         print_table
-        printf '  %s\n' "${C_DIM}number = manage that one · n = new session · s = start all · r = restart all${C_RESET}"
+        printf '  %s\n' "${C_DIM}1-9 = manage that one · n = new session · s = start all · r = restart all${C_RESET}"
         printf '  %s\n' "${C_DIM}x = stop all · y = sync systemd with the config · q = back${C_RESET}"
-        input="$(ask "Choice: " q)"
-        case "$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')" in
-            q|quit|'') say "Nothing changed."; return 0 ;;
-            n|new)     new_session_interactive ;;
-            s|start)   printf '\n'; for_each start_one   "$(autostart_names | tr '\n' ' ')" ;;
-            r|restart) printf '\n'; for_each restart_one "$(autostart_names | tr '\n' ' ')" ;;
-            x|stop)    printf '\n'; for_each stop_one ;;
-            y|sync)    printf '\n'; sync_units ;;
-            *)
-                if printf '%s' "$input" | grep -qE '^[0-9]+$'; then
-                    name="$(nth_session "$input")"
-                    if [ -n "$name" ]; then manage_one "$name"; else warn "no session numbered $input"; fi
-                elif session_known "$input"; then
-                    manage_one "$input"
-                else
-                    warn "unrecognised choice '$input'"
-                fi ;;
+        # One key means one digit, so a tenth session cannot be picked from the
+        # table. Say so rather than leaving it to be discovered, and point at
+        # the spelling that does still reach it.
+        [ "$(session_count)" -gt 9 ] && \
+            printf '  %s\n' "${C_YELLOW}more than 9 sessions — reach the rest by name: curl.sh session <name>${C_RESET}"
+        input="$(ask_key "Choice: ")"
+        case "$input" in
+            '')  continue ;;
+            q)   return 0 ;;
+            n)   new_session_interactive ;;
+            s)   printf '\n'; for_each start_one   "$(autostart_names | tr '\n' ' ')" ;;
+            r)   printf '\n'; for_each restart_one "$(autostart_names | tr '\n' ' ')" ;;
+            x)   printf '\n'; for_each stop_one ;;
+            y)   printf '\n'; sync_units ;;
+            [1-9])
+                name="$(nth_session "$input")"
+                if [ -n "$name" ]; then manage_one "$name"; else warn "no session numbered $input"; fi ;;
+            *)   warn "unrecognised choice '$input'" ;;
         esac
     done
 }
@@ -2830,9 +2834,9 @@ home_menu() {
         # dc_state reads a cache built in the parent; refresh it once per draw.
         dc_rescan
         printf '\n'
-        home_row c 'claude sessions' "$(home_summary_sessions)"
+        home_row c 'Claude sessions' "$(home_summary_sessions)"
         home_row d 'Docker'          "$(home_summary_containers)"
-        home_row i 'installers'      "$(home_summary_installers)"
+        home_row i 'Installers'      "$(home_summary_installers)"
         printf '\n  %s\n' "${C_DIM}o = doctor · ? = help · q = quit${C_RESET}"
         # One keypress, no Enter. Every choice here is a single character, so
         # asking for Enter as well was a keystroke that bought nothing. The
