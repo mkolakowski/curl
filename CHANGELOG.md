@@ -13,6 +13,68 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.0.0] - 2026-08-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Delete claude.sh and rename Installers to Software
+
+claude.sh has been a shim since 4.1.0, forwarding to "curl.sh session
+$@" so that anything still pointing at the old URL kept working. It is
+gone now, and that URL 404s. Nothing on a provisioned box depended on
+it: the runner, the unit, the boot stub and the registry only ever
+mentioned claude.sh in comment text, never invoked it. What it bought
+was written-down URLs in notes and shell history, and the forwarding
+has been in place long enough to have paid that off.
+
+So curl.sh is the only script here now, which is worth saying plainly
+because it is a constraint on the next change as much as a description
+of this one. The comments that described the split have been rewritten
+rather than deleted, since a reader hitting "was claude.sh" in the
+middle of the file needs to know it is history and not a missing file.
+
+CRON_MARKER is the exception and stays spelled claude.sh. It is
+grep -F'd against crontabs that the old script wrote, so rewording it
+would strand the @reboot entries migrate exists to clean up. Same
+reasoning anywhere else a string is compared against state already on
+a box; the PATH comment in .profile is not one of those, because the
+guard there matches .local/bin rather than the marker.
+
+The home menu's third row is Software rather than Installers, keyed s
+to match c for Claude and d for Docker. i still works, undrawn -- the
+rename is not a reason to punish fingers that learned the old key.
+
+Also fixes the README, which still had d opening the container submenu
+from the package checklist. The picker has no d; that is the home
+menu. 9.0.0 fixed the neighbouring shortcut and missed this line.
+```
+
+</details>
+
+### Removed
+
+- **Breaking:** `claude.sh` is gone, and its URL with it. It had forwarded to
+  `curl.sh session` since 4.1.0; anything still calling it wants
+  `curl.sh session <command>` — `claude.sh list` is `curl.sh session list`.
+
+### Changed
+
+- **Breaking:** the home menu's third row is **Software**, keyed `s`, and was
+  **Installers**, keyed `i`. `i` still does the same thing, it is just no longer
+  drawn. `curl.sh install <name>` is unchanged.
+- The registry header and the `PATH` line added to `~/.profile` say `curl.sh`
+  rather than `claude.sh`. Existing files are not rewritten, and the `@reboot`
+  crontab marker keeps its old spelling so that `curl.sh session migrate` can
+  still find the entries it is meant to clean up.
+
+### Fixed
+
+- The README said `d` in the package checklist opens the container submenu. It
+  does not and never did — `d` is at the home menu.
+
 ## [9.0.0] - 2026-08-01
 
 ### Commit message

@@ -12,24 +12,24 @@ With no arguments you get a menu of three things, each opening its own submenu:
 ```
   c   Claude sessions  3 running, 0 failed
   d   Docker           1 running, 2 idle
-  i   Installers       8 of 8 installed
+  s   Software         8 of 8 installed
 
   o = doctor · ? = help · q = quit
 Choice:
 ```
 
-One keypress, no Enter — `c`, `d`, `i`, `o` and `q` act as soon as you press
+One keypress, no Enter — `c`, `d`, `s`, `o` and `q` act as soon as you press
 them. Enter on its own redraws. The submenus still read a line, because they
 take numbers and lists like `2,4,5`.
 
-- **installers** — a checklist of tools; tick what you want, it installs them
+- **software** — a checklist of tools; tick what you want, it installs them
 - **containers** — docker compose stacks, managed in place under `/opt/stacks`
 - **claude sessions** — Claude Code unattended: one `tmux` session per project
   folder, started at boot by systemd and restarted if it dies
 
-The sessions were a separate script, [`claude.sh`](claude.sh), until 4.1.0.
-That URL still works — it forwards to `curl.sh session` — so `claude.sh list`
-and `curl.sh session list` are the same thing.
+The sessions were a separate script, `claude.sh`, until 4.1.0, and that URL
+forwarded here until 10.0.0, when it was removed. Anything still pointing at it
+wants `curl.sh session` instead: `claude.sh list` is now `curl.sh session list`.
 
 ## curl.sh — pick your packages
 
@@ -99,7 +99,7 @@ than being overwritten silently.
 
 ### Docker containers
 
-`d` in the checklist opens a submenu for container stacks, with the same
+`d` at the home menu opens a submenu for container stacks, with the same
 toggle-by-number picker:
 
 ```
@@ -160,8 +160,8 @@ install docker`.
 bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) session
 ```
 
-The old `claude.sh` URL still works and forwards here, so every `claude.sh`
-command below can be spelled either way.
+This was its own script, `claude.sh`, until 4.1.0, and that URL forwarded here
+until 10.0.0. Every command below is spelled `curl.sh session <command>`.
 
 Runs any number of Claude Code sessions on the box — one per project folder,
 each in its own `tmux` session, each started at boot by systemd and restarted if
@@ -210,7 +210,7 @@ Session name: api
   Start 'api' now? [Y/n]: y
 ```
 
-The same flow is `claude.sh new`. `owner/repo` and full `https://` or `git@`
+The same flow is `curl.sh session new`. `owner/repo` and full `https://` or `git@`
 URLs all work for the clone option; a destination that is already a clone is
 used as it is rather than failing.
 
@@ -226,7 +226,7 @@ api           /home/matt/GitHub/api             autostart yolo remote
 scratch       /tmp/scratch                      noautostart noyolo
 ```
 
-Adding a project is one line plus `claude.sh sync`. That is the whole extension
+Adding a project is one line plus `curl.sh session sync`. That is the whole extension
 story: **one** templated unit, `claude-session@<name>.service`, serves every
 session, so a new folder never means writing or editing a unit file.
 
@@ -241,11 +241,11 @@ on its own means autostart and yolo. Work directories may not contain spaces;
 | `local` / `remote` / `remote-interactive` | `local` | Remote Control mode, below |
 
 ```
-bash <(curl -Ss .../claude.sh) new
-bash <(curl -Ss .../claude.sh) add api ~/GitHub/api
-bash <(curl -Ss .../claude.sh) add scratch /tmp/scratch --no-autostart --no-yolo
-bash <(curl -Ss .../claude.sh) sync
-bash <(curl -Ss .../claude.sh) rm scratch
+bash <(curl -Ss .../curl.sh) session new
+bash <(curl -Ss .../curl.sh) session add api ~/GitHub/api
+bash <(curl -Ss .../curl.sh) session add scratch /tmp/scratch --no-autostart --no-yolo
+bash <(curl -Ss .../curl.sh) session sync
+bash <(curl -Ss .../curl.sh) session rm scratch
 ```
 
 `sync` is what you run after editing the file by hand: it enables the units for
@@ -268,13 +268,13 @@ hand over, and reach for `noyolo` on anything you aren't.
 ### Attaching
 
 ```
-tmux attach -t claude-<name>      detach again with Ctrl-b d
-tmux ls                           every session on the box
-claude.sh attach <name>           the same thing, across a sudo boundary
+tmux attach -t claude-<name>          detach again with Ctrl-b d
+tmux ls                               every session on the box
+curl.sh session attach <name>         the same thing, across a sudo boundary
 ```
 
 Sessions are named `claude-<name>` on tmux's default socket, so a plain `tmux
-ls` shows them all and no extra flags are needed to attach. `claude.sh attach`
+ls` shows them all and no extra flags are needed to attach. `curl.sh session attach`
 exists because the sessions belong to *your* account: as root you would
 otherwise be talking to root's tmux server and see nothing.
 
@@ -335,7 +335,7 @@ present and ignores if not (`chmod 600` them):
 ```
 
 Remote Control specifically needs the claude.ai login and refuses API keys, so
-the two are not interchangeable — see below. `claude.sh doctor` reports which of
+the two are not interchangeable — see below. `curl.sh doctor` reports which of
 the two you have.
 
 ### Remote control
@@ -345,9 +345,9 @@ Claude mobile app while it keeps running here, against this filesystem. There
 are two modes, because Claude Code offers two:
 
 ```
-bash <(curl -Ss .../claude.sh) remote api on           # server mode
-bash <(curl -Ss .../claude.sh) remote api interactive  # interactive + remote
-bash <(curl -Ss .../claude.sh) remote api off
+bash <(curl -Ss .../curl.sh) session remote api on           # server mode
+bash <(curl -Ss .../curl.sh) session remote api interactive  # interactive + remote
+bash <(curl -Ss .../curl.sh) session remote api off
 ```
 
 `on` is **server mode** — `claude remote-control`. The session exists to be
@@ -380,8 +380,8 @@ isn't.
 ### When a session doesn't come up
 
 ```
-bash <(curl -Ss .../claude.sh) doctor
-bash <(curl -Ss .../claude.sh) logs <name>
+bash <(curl -Ss .../curl.sh) session doctor
+bash <(curl -Ss .../curl.sh) session logs <name>
 ```
 
 `doctor` reports the Claude Code and tmux versions, whether systemd and the unit
@@ -428,7 +428,7 @@ outlives its command by five seconds and prints the exit status, so
 ### Upgrading from the screen version
 
 Earlier versions ran sessions under `screen` from an `@reboot` crontab entry.
-Upgrading migrates automatically, and `claude.sh migrate` does it on demand:
+Upgrading migrates automatically, and `curl.sh session migrate` does it on demand:
 
 - the `@reboot` entry is removed — **only** ours; anything else in your crontab
   is left exactly where it is
@@ -440,7 +440,7 @@ Upgrading migrates automatically, and `claude.sh migrate` does it on demand:
 - your registry carries over unchanged. Flags mean what they did, plus every
   session picks up the new `yolo` default
 
-`claude.sh status` says so if any of it is still lying around.
+`curl.sh session status` says so if any of it is still lying around.
 
 ### Commands
 
@@ -478,7 +478,7 @@ Upgrading migrates automatically, and `claude.sh migrate` does it on demand:
 
 ## Notes
 
-Run both as your normal user, not as root — they call `sudo` where needed and
+Run it as your normal user, not as root — it calls `sudo` where needed and
 deliberately install Claude Code and its config as *you*. The systemd unit needs
 root to write, but it carries `User=` and runs the sessions under your account.
 If you do run these under `sudo`, they follow `$SUDO_USER` back to you rather
@@ -487,9 +487,9 @@ than dumping everything in `/root`.
 Attach to a session by hand any time with `tmux attach -t claude-<name>`, and
 detach again with <kbd>Ctrl-b</kbd> <kbd>d</kbd>. The tmux server belongs to
 whoever started it: as root you won't see a session belonging to your own
-account, so use `claude.sh attach <name>`, which crosses that boundary for you.
+account, so use `curl.sh session attach <name>`, which crosses that boundary for you.
 
-`NO_COLOR=1` turns off colour in both scripts.
+`NO_COLOR=1` turns off colour.
 
 ## archive/
 

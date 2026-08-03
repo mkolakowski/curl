@@ -19,16 +19,22 @@ One standalone bash script, `curl.sh`, run straight off the web with nothing
 installed first. It covers three things, each with its own submenu off the home
 menu and its own branch of the CLI:
 
-- **installers** — a checklist of packages (`curl.sh install docker`)
+- **software** — a checklist of packages (`curl.sh install docker`)
 - **containers** — docker compose stacks under `/opt/stacks`
   (`curl.sh containers start dockge`)
 - **claude sessions** — Claude Code running unattended in `tmux`, supervised by
   a templated systemd unit (`curl.sh session add site ~/GitHub/site`)
 
-The session half was a second script, `claude.sh`, until 4.1.0. That file is now
-a compatibility shim that re-execs `curl.sh session "$@"`, so the old URL keeps
-working; it is a dozen lines and should stay that way. `archive/` holds
-superseded scripts and is frozen — never edit anything under it.
+The session half was a second script, `claude.sh`, until 4.1.0, kept alive after
+that as a shim forwarding to `curl.sh session`. It was deleted in 10.0.0, so
+`curl.sh` is the only script here: it must stay self-contained, and nothing may
+be added that expects a second file next to it. `archive/` holds superseded
+scripts and is frozen — never edit anything under it.
+
+`CRON_MARKER` still spells `claude.sh` on purpose. It is matched against
+crontabs written by the old script and cannot be reworded without stranding
+them; the same goes for any other string compared against state already on a
+box. Renaming those is not a cleanup, it is a bug.
 
 ## Keep the changelog
 

@@ -15,14 +15,14 @@
 # Every install is idempotent — anything already present is reported and
 # skipped, so re-running is cheap and safe.
 #
-# The session half of this was claude.sh until 4.1.0. That URL still works and
-# forwards here, so "curl.sh session list" and "curl.sh session list" are the same
-# thing.
+# The session half of this was a second script, claude.sh, until 4.1.0, and that
+# URL kept forwarding here until 10.0.0. Everything it did is a subcommand now:
+# "claude.sh list" is "curl.sh session list".
 
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="9.0.0"          # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.0.0"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -42,18 +42,13 @@ readonly SESSION_PREFIX="claude-"
 # restarting forever.
 readonly EX_CONFIG=78
 
-# Screen-era leftovers we clean up when migrating.
+# Screen-era leftovers we clean up when migrating. Both spellings are matched
+# against crontabs that already exist on a box, so neither string can be
+# reworded — claude.sh wrote the first one back when it was its own script.
 readonly CRON_MARKER="# claude-session-boot (managed by claude.sh)"
 readonly CRON_MARKER_LEGACY="# claude-session-boot (managed by curl.sh)"
 
 # ------------------------------------------------------------------ plumbing --
-# This was a block kept byte-identical between curl.sh and claude.sh so the two
-# could be merged by copying rather than reconciling. That merge has happened
-# and claude.sh is a shim, so it is just the plumbing now.
-
-# C_CYAN is used by claude.sh and not by curl.sh. This block is shared
-# verbatim, so the unused one is deliberate rather than a leftover.
-# shellcheck disable=SC2034
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
     C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_BLUE=$'\033[34m'; C_CYAN=$'\033[36m'
@@ -197,8 +192,8 @@ apt_ensure() {
 }
 
 # ============================================================ claude sessions ==
-# Everything from here to "end claude sessions" was claude.sh, which is now a
-# shim that re-execs this file. It is reached as "curl.sh session <command>".
+# Everything from here to "end claude sessions" was claude.sh, a second script
+# that is now gone. It is reached as "curl.sh session <command>".
 
 VERBOSE="${CLAUDE_SH_VERBOSE:-}"
 vlog() { [ -n "$VERBOSE" ] || return 0; printf '%s\n' "${C_DIM}[$(date +%H:%M:%S)] $*${C_RESET}" >&2; }
@@ -305,7 +300,7 @@ autostart_names() { sessions_read | awk -F'\t' '$3 == "yes" { print $1 }'; }
 
 sessions_header() {
     printf '%s\n' \
-        '# Claude Code sessions, one per line. Managed by claude.sh, safe to edit.' \
+        '# Claude Code sessions, one per line. Managed by curl.sh, safe to edit.' \
         '# Run "curl.sh session sync" after editing so systemd matches what is here.' \
         '#' \
         '#   <name>  <work directory>  [flags...]' \
@@ -1082,7 +1077,7 @@ install_claude_code() {
     local rc="$TARGET_HOME/.profile"
     if ! grep -qs '\.local/bin' "$rc" 2>/dev/null; then
         # shellcheck disable=SC2016  # $HOME must stay literal inside .profile
-        printf '\n# added by claude.sh\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
+        printf '\n# added by curl.sh\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
         ok "added ~/.local/bin to PATH in $rc"
     fi
     if as_user 'command -v claude >/dev/null 2>&1'; then
@@ -1128,8 +1123,8 @@ write_runner() {
 	# RestartPreventExitStatus so a bad line in the registry fails once instead of
 	# restarting every five seconds forever.
 	#
-	# Written by claude.sh as a STUB. Everything between the EDIT markers is
-	# yours. claude.sh will not overwrite this file once you have edited it; it
+	# Written by curl.sh as a STUB. Everything between the EDIT markers is
+	# yours. curl.sh will not overwrite this file once you have edited it; it
 	# writes a .new file alongside instead.
 
 	set -u
@@ -1682,7 +1677,7 @@ session_usage() {
     cat <<-USAGE
 	${C_BOLD}curl.sh session${C_RESET} $VERSION — Claude Code unattended in tmux, started by systemd
 
-	  curl.sh session [command]        (was: claude.sh [command], which still works)
+	  curl.sh session [command]        (was: claude.sh [command], removed in 10.0.0)
 
 	${C_BOLD}Commands${C_RESET}
 	  (none)                    table of sessions; pick one, press n for a new
@@ -2739,7 +2734,7 @@ usage() {
 	  bash <(curl -Ss https://raw.githubusercontent.com/mkolakowski/curl/main/curl.sh) [command]
 
 	${C_BOLD}Commands${C_RESET}
-	  (none)              menu: claude sessions, containers, installers
+	  (none)              menu: claude sessions, containers, software
 	  install <name>...   install the named entries without prompting
 	  install all         install everything
 	  install missing     install whatever is not there yet
@@ -2766,9 +2761,9 @@ usage() {
 	  NO_COLOR=1          plain output
 
 	Claude Code sessions used to live in claude.sh. They are in this file now:
-	  curl.sh session list        was: curl.sh session list
+	  curl.sh session list        was: claude.sh list
 	  curl.sh session add <name> <dir>
-	The old claude.sh URL still works and forwards here.
+	The claude.sh URL was removed in 10.0.0; use curl.sh session.
 
 	  $REPO_URL
 	USAGE
@@ -2807,7 +2802,7 @@ home_summary_containers() {
     printf '%d running, %d idle' "$running" "$idle"
 }
 
-home_summary_installers() {
+home_summary_software() {
     local i n=0
     catalog_fresh
     for i in "${!PKG_KEYS[@]}"; do
@@ -2837,7 +2832,7 @@ home_menu() {
         printf '\n'
         home_row c 'Claude sessions' "$(home_summary_sessions)"
         home_row d 'Docker'          "$(home_summary_containers)"
-        home_row i 'Installers'      "$(home_summary_installers)"
+        home_row s 'Software'        "$(home_summary_software)"
         printf '\n  %s\n' "${C_DIM}o = doctor · ? = help · q = quit${C_RESET}"
         # One keypress, no Enter. Every choice here is a single character, so
         # asking for Enter as well was a keystroke that bought nothing. The
@@ -2848,7 +2843,10 @@ home_menu() {
             q)   return 0 ;;
             c)   cmd_session ;;
             d)   docker_menu; catalog_stale ;;
-            i)   picker && run_selection; catalog_stale ;;
+            # i was this row's key while it was called Installers. It is not
+            # drawn any more, but it stays accepted: the rename is not a reason
+            # to punish anyone whose fingers learned the old one.
+            s|i) picker && run_selection; catalog_stale ;;
             o)   doctor ;;
             \?|h) usage ;;
             *)   warn "unrecognised choice '$input'" ;;
@@ -2870,8 +2868,8 @@ main() {
     set -- ${args+"${args[@]}"}
 
     # version prints the version and nothing else, banner included. Look past a
-    # leading "session" so that it still does when the claude.sh shim turns
-    # "claude.sh version" into "curl.sh session version".
+    # leading "session" so that "curl.sh session version" answers the same way
+    # "curl.sh version" does, rather than printing the session banner.
     local probe="${1:-}"
     case "$probe" in session|sessions) probe="${2:-}" ;; esac
     case "$probe" in
