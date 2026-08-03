@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="10.0.0"         # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.0.1"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 

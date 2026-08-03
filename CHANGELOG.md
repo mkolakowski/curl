@@ -13,6 +13,49 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.0.1] - 2026-08-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Restructure the README around its three domains
+
+The README had grown by accretion: the install one-liner appeared three
+times, a trailing Notes section re-explained attaching and the sudo
+boundary a second time, and the environment variables were split
+between a session table and curl.sh's own help with no single place to
+look them up.
+
+It is now organised as the home menu is -- Software, Containers,
+Claude sessions -- with a key/domain table at the top that doubles as
+the contents, and one Reference table carrying every environment
+variable. Design rationale that a first-time reader does not need is
+folded into collapsible sections: the systemd and Type=simple
+reasoning, the purplemux prerequisites, why yolo behaves differently
+in server mode, and the migration from the screen era. All of it is
+still there, just not in the way.
+
+The two things that can actually bite someone are GitHub alerts now
+rather than paragraphs: purplemux advertising the machine's IP, and
+yolo meaning any command in the working directory without asking.
+
+Prose was cut throughout -- roughly 300 words -- and the new-session
+wizard transcript went, since the paragraph above it already described
+every question it asks.
+```
+
+</details>
+
+### Changed
+
+- The README is reorganised around the three home-menu domains, with a contents
+  table at the top, one table of every environment variable, and the deeper
+  design rationale moved into collapsible sections. Every fact it documented is
+  still there — only the new-session transcript went, since the paragraph above
+  it says what the wizard asks.
+
 ## [10.0.0] - 2026-08-03
 
 ### Commit message
