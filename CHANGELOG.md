@@ -13,6 +13,35 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.2.1] - 2026-09-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Clear the screen before the first menu too
+
+10.2.0 cleared the screen on every jump between menus except the very
+first one: the home menu still printed under whatever the curl/bash
+invocation and its output had already put on screen, since it is
+reached from main() rather than from another menu's dispatch.
+
+It's now cleared the same way, right before the banner, so it starts
+from a clean screen like every menu after it. Scoped to the bare
+invocation only -- one-shot commands like `curl.sh list` still print
+their banner without clearing anything, since there is no prior menu
+screen to wipe there.
+```
+
+</details>
+
+### Changed
+
+- The home menu now clears the screen before its very first draw too, not
+  just when moving to and from a submenu, so it no longer prints underneath
+  the command that launched it.
+
 ## [10.2.0] - 2026-09-03
 
 ### Commit message

@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="10.2.0"         # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.2.1"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -2941,6 +2941,11 @@ main() {
     case "$probe" in
         version|--version|-V) printf '%s\n' "$VERSION"; return 0 ;;
     esac
+    # Clear before the very first menu, the same as every jump between menus
+    # after it -- otherwise the home menu is the one screen in the whole
+    # program that still shows up under the curl/bash invocation that started
+    # it.
+    [ -n "${1:-}" ] || clear_screen
     banner
     case "${1:-}" in
         '')
