@@ -13,6 +13,36 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.2.0] - 2026-09-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Clear the screen when moving between menus
+
+Navigating from the home menu into docker, sessions or the software
+picker (and back) left every earlier screen sitting in the scrollback,
+so a few trips around the menus buried the current one under several
+redraws of the ones before it.
+
+The screen now clears on the way into a submenu and on the way out via
+docker_menu's and session_menu's own "q", so each menu you land on
+starts from a clean screen. It never clears between an action and the
+redraw that follows it in the SAME menu -- install/start/stop output
+and warnings still stay on screen until you move to a different menu.
+```
+
+</details>
+
+### Added
+
+- The home menu, docker menu, sessions menu and software picker now clear the
+  screen when you move from one to another, so earlier menus don't pile up as
+  scrollback. Action output and warnings within the same menu are unaffected —
+  only switching menus clears.
+
 ## [10.1.2] - 2026-09-03
 
 ### Commit message

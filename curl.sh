@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="10.1.2"         # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.2.0"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -118,6 +118,15 @@ ask_yn() {
         *)     [ "$default" = y ] ;;
     esac
 }
+
+# Wipe the terminal when moving from one menu to a different one, so the
+# screen you just left doesn't sit above the one you're moving to. Never
+# called between an action and the redraw that follows it within the SAME
+# menu -- that redraw's job is to show install/start/stop output and warnings,
+# and clearing there would erase them before they could be read. Skipped when
+# stdout is not a terminal, so this never puts a control sequence in a pipe or
+# a log.
+clear_screen() { [ -t 1 ] && have clear && clear; }
 
 have()         { command -v "$1" >/dev/null 2>&1; }
 have_systemd() { have systemctl && [ -d /run/systemd/system ]; }
@@ -983,7 +992,7 @@ session_menu() {
         input="$(ask_key "Choice: ")"
         case "$input" in
             '')  continue ;;
-            q)   return 0 ;;
+            q)   clear_screen; return 0 ;;
             n)   new_session_interactive ;;
             s)   printf '\n'; for_each start_one   "$(autostart_names | tr '\n' ' ')" ;;
             r)   printf '\n'; for_each restart_one "$(autostart_names | tr '\n' ' ')" ;;
@@ -2592,7 +2601,7 @@ docker_menu() {
         input="$(ask_key "Choice: ")"
         case "$input" in
             '')  continue ;;
-            q)   return 0 ;;
+            q)   clear_screen; return 0 ;;
             a)   for idx in "${!DC_KEYS[@]}"; do DC_SELECTED[idx]=1; done ;;
             n)   dc_reset ;;
             i)   dc_apply install && dc_reset ;;
@@ -2893,12 +2902,17 @@ home_menu() {
         case "$input" in
             '')  continue ;;
             q)   return 0 ;;
-            c)   cmd_session ;;
-            d)   docker_menu; catalog_stale ;;
+            # Clear right before opening a submenu, so the home menu you just
+            # acted on doesn't sit above it. Not cleared again on return here:
+            # docker_menu and session_menu already clear themselves on their
+            # own way out, and the software picker's install output needs to
+            # stay on screen for this same loop's next redraw to leave alone.
+            c)   clear_screen; cmd_session ;;
+            d)   clear_screen; docker_menu; catalog_stale ;;
             # i was this row's key while it was called Installers. It is not
             # drawn any more, but it stays accepted: the rename is not a reason
             # to punish anyone whose fingers learned the old one.
-            s|i) picker && run_selection; catalog_stale ;;
+            s|i) clear_screen; picker && run_selection; catalog_stale ;;
             o)   doctor ;;
             \?|h) usage ;;
             *)   warn "unrecognised choice '$input'" ;;
