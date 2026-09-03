@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="10.0.1"         # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.1.0"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -2239,7 +2239,7 @@ dc_dir() { printf '%s\n' "$STACKS_DIR/$1"; }
 # before the user had chosen anything privileged to do. Try unprivileged docker
 # first, then a non-interactive sudo, and settle for an unknown state rather
 # than interrupting the table.
-DC_PS=''            # "<name> <state>" lines
+DC_PS=''            # "<name>\t<state>\t<ports>" lines
 DC_PS_OK=''         # set when we managed to read docker at all
 DC_PS_SCANNED=''
 # Empty when docker works as us. "curl.sh docker" puts you in the docker group
@@ -2249,10 +2249,10 @@ DOCKER_SUDO="$SUDO"
 dc_scan() {
     DC_PS=''; DC_PS_OK=''; DC_PS_SCANNED=1; DOCKER_SUDO="$SUDO"
     have docker || return 0
-    if DC_PS="$(docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"; then
+    if DC_PS="$(docker ps -a --format '{{.Names}}	{{.State}}	{{.Ports}}' 2>/dev/null)"; then
         DC_PS_OK=1; DOCKER_SUDO=''; return 0
     fi
-    if [ -n "$SUDO" ] && DC_PS="$(sudo -n docker ps -a --format '{{.Names}} {{.State}}' 2>/dev/null)"; then
+    if [ -n "$SUDO" ] && DC_PS="$(sudo -n docker ps -a --format '{{.Names}}	{{.State}}	{{.Ports}}' 2>/dev/null)"; then
         DC_PS_OK=1; return 0
     fi
     DC_PS=''
@@ -2273,13 +2273,37 @@ dc_state() {
         [ -r "$(dc_dir "$1")/docker-compose.yml" ] && { printf '%s' 'written'; return; }
         printf '%s' '-'; return
     fi
-    st="$(printf '%s\n' "$DC_PS" | awk -v n="$1" '$1 == n { print $2; exit }')"
+    st="$(printf '%s\n' "$DC_PS" | awk -F'\t' -v n="$1" '$1 == n { print $2; exit }')"
     case "$st" in
         running) printf '%s' 'running'; return ;;
         ?*)      printf '%s' 'stopped'; return ;;
     esac
     [ -r "$(dc_dir "$1")/docker-compose.yml" ] && { printf '%s' 'written'; return; }
     printf '%s' '-'
+}
+
+# Ports for a container already known to dc_state, e.g. "0.0.0.0:5001->5001/tcp".
+# Empty when the container has none published, is not running, or docker could
+# not be read at all.
+dc_ports() {
+    [ -n "$DC_PS_SCANNED" ] || dc_scan
+    [ -n "$DC_PS_OK" ] || { printf '%s' ''; return; }
+    printf '%s\n' "$DC_PS" | awk -F'\t' -v n="$1" '$1 == n { print $3; exit }'
+}
+
+# Containers docker knows about that are not one of DC_KEYS — anything started
+# by hand, by another compose project, or by Dockge itself once it is running.
+# The catalog table only ever walked DC_KEYS, so a container outside it was
+# invisible here even while "docker ps" plainly showed it running.
+dc_other_running() {
+    [ -n "$DC_PS_SCANNED" ] || dc_scan
+    [ -n "$DC_PS_OK" ] || return 0
+    local known
+    known="$(printf '%s\n' "${DC_KEYS[@]}")"
+    printf '%s\n' "$DC_PS" | awk -F'\t' -v known="$known" '
+        BEGIN { n = split(known, k, "\n"); for (i = 1; i <= n; i++) seen[k[i]] = 1 }
+        $2 == "running" && !seen[$1] { print }
+    '
 }
 
 dc_compose_for() {
@@ -2480,12 +2504,12 @@ dc_apply() {
 }
 
 dc_print_catalog() {
-    local i key st pad mark
+    local i key st pad ports ppad mark name state
     # Scan HERE, in the parent shell. dc_state is called from a $( ) below, and
     # a subshell's cache dies with it — leaving one "docker ps" per row and a
     # DC_PS_OK the footer could never see.
     [ -n "$DC_PS_SCANNED" ] || dc_scan
-    printf '\n  %-3s %-3s %-14s %-9s %s\n' '' '#' 'container' 'state' 'what it is'
+    printf '\n  %-3s %-3s %-14s %-9s %-28s %s\n' '' '#' 'container' 'state' 'ports' 'what it is'
     printf '  %s\n' "$(printf '%.0s-' {1..72})"
     for i in "${!DC_KEYS[@]}"; do
         key="${DC_KEYS[i]}"
@@ -2496,13 +2520,25 @@ dc_print_catalog() {
             stopped|written|'?') pad="${C_YELLOW}${pad}${C_RESET}" ;;
             *) pad="${C_DIM}${pad}${C_RESET}" ;;
         esac
+        ports="$(dc_ports "$key")"
+        printf -v ppad '%-28s' "${ports:--}"
         [ "${DC_SELECTED[i]:-0}" = 1 ] && mark="${C_GREEN}[x]${C_RESET}" || mark='[ ]'
-        printf '  %b %-3s %-14s %b %s\n' "$mark" "$((i + 1))" "$key" "$pad" "${C_DIM}${DC_BLURB[i]}${C_RESET}"
+        printf '  %b %-3s %-14s %b %s %s\n' "$mark" "$((i + 1))" "$key" "$pad" "${C_DIM}${ppad}${C_RESET}" "${C_DIM}${DC_BLURB[i]}${C_RESET}"
     done
     if have docker && [ -z "$DC_PS_OK" ]; then
         printf '  %s\n' "${C_DIM}state is '?' — reading docker needs a password here, which this table will not ask for${C_RESET}"
     elif ! have docker; then
         printf '  %s\n' "${C_YELLOW}docker is not installed — installing any stack installs it first${C_RESET}"
+    fi
+    # Anything else docker has running — not part of this catalog, so it has no
+    # number and cannot be ticked, but it is not left off the table either.
+    local other; other="$(dc_other_running)"
+    if [ -n "$other" ]; then
+        printf '\n  %s\n' "${C_DIM}also running, not managed here:${C_RESET}"
+        while IFS=$'\t' read -r name state ports; do
+            [ -n "$name" ] || continue
+            printf '      %-14s %b %s\n' "$name" "${C_GREEN}$(printf '%-9s' "$state")${C_RESET}" "${C_DIM}${ports:--}${C_RESET}"
+        done <<< "$other"
     fi
     printf '\n'
 }

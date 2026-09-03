@@ -13,6 +13,38 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.1.0] - 2026-09-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Show ports and unmanaged containers in the docker menu
+
+The docker menu's table only ever walked DC_KEYS -- the three catalog
+stacks -- so a container started by hand, by another compose project,
+or by Dockge itself was invisible even while "docker ps" plainly
+showed it running. It also had no way to tell what a running
+container was actually listening on short of shelling out.
+
+dc_scan now pulls {{.Ports}} alongside name and state, a new ports
+column shows it in the catalog rows, and a second, unnumbered section
+lists any other running container docker knows about so nothing on
+the host is hidden just because this script doesn't manage it.
+```
+
+</details>
+
+### Added
+
+- The docker menu's container table now shows a **ports** column for each
+  catalog entry.
+- The docker menu now lists any other running container on the host under
+  "also running, not managed here" — previously only cloudflared,
+  beszel-agent and dockge ever appeared, even if other containers were
+  running.
+
 ## [10.0.1] - 2026-08-03
 
 ### Commit message
