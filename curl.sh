@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="10.1.0"         # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.1.1"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -2531,13 +2531,23 @@ dc_print_catalog() {
         printf '  %s\n' "${C_YELLOW}docker is not installed — installing any stack installs it first${C_RESET}"
     fi
     # Anything else docker has running — not part of this catalog, so it has no
-    # number and cannot be ticked, but it is not left off the table either.
+    # number and cannot be ticked, but it is not left off the table either. The
+    # columns line up with the table above: same widths, same mark/# slots left
+    # blank, same state colouring, just no blurb since there is no catalog entry
+    # to describe it.
     local other; other="$(dc_other_running)"
     if [ -n "$other" ]; then
         printf '\n  %s\n' "${C_DIM}also running, not managed here:${C_RESET}"
+        printf '  %s\n' "$(printf '%.0s-' {1..72})"
         while IFS=$'\t' read -r name state ports; do
             [ -n "$name" ] || continue
-            printf '      %-14s %b %s\n' "$name" "${C_GREEN}$(printf '%-9s' "$state")${C_RESET}" "${C_DIM}${ports:--}${C_RESET}"
+            printf -v pad '%-9s' "$state"
+            case "$state" in
+                running) pad="${C_GREEN}${pad}${C_RESET}" ;;
+                *) pad="${C_DIM}${pad}${C_RESET}" ;;
+            esac
+            printf -v ppad '%-28s' "${ports:--}"
+            printf '  %-3s %-3s %-14s %b %s\n' '' '' "$name" "$pad" "${C_DIM}${ppad}${C_RESET}"
         done <<< "$other"
     fi
     printf '\n'

@@ -13,6 +13,32 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.1.1] - 2026-09-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Line up the unmanaged-container list with the catalog table
+
+The "also running, not managed here" section added in 10.1.0 used its
+own column widths and always coloured state green, so it looked like
+a bolted-on list rather than a continuation of the table above it.
+
+It now shares the catalog table's mark/#/name/state/ports widths and
+dashed separator, with the mark and # slots left blank instead of
+dropped, so the container name, state and ports line up in both
+sections.
+```
+
+</details>
+
+### Fixed
+
+- The docker menu's "also running, not managed here" list now lines up with
+  the catalog table above it instead of using its own narrower columns.
+
 ## [10.1.0] - 2026-09-03
 
 ### Commit message
