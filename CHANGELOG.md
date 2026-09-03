@@ -13,6 +13,35 @@ carried it.
 Versions below 2.0.0 were reconstructed from git history after the fact; the
 repository carries no tags yet.
 
+## [10.1.2] - 2026-09-03
+
+### Commit message
+
+<details><summary>For the GitHub Desktop Summary and Description fields</summary>
+
+```
+Widen the unmanaged-container name column to fit what's there
+
+The "also running, not managed here" list pinned its name column at
+the catalog table's 14 characters, which fits cloudflared,
+beszel-agent and dockge but not much else -- compose's default
+"<project>-<service>-<n>" naming routinely runs to 20+ characters, so
+any real container list dragged the state and ports columns out of
+alignment row by row.
+
+The column now widens to the longest name actually running, computed
+each time the table draws, so state and ports stay aligned whatever
+is on the host.
+```
+
+</details>
+
+### Fixed
+
+- The docker menu's "also running, not managed here" list now widens its name
+  column to fit long container names instead of letting them push the state
+  and ports columns out of alignment.
+
 ## [10.1.1] - 2026-09-03
 
 ### Commit message

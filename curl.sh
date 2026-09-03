@@ -22,7 +22,7 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------- constants --
-readonly VERSION="10.1.1"         # keep in step with the top entry of CHANGELOG.md
+readonly VERSION="10.1.2"         # keep in step with the top entry of CHANGELOG.md
 readonly SCRIPT_NAME="curl.sh"
 readonly REPO_URL="https://github.com/mkolakowski/curl"
 
@@ -2532,11 +2532,17 @@ dc_print_catalog() {
     fi
     # Anything else docker has running — not part of this catalog, so it has no
     # number and cannot be ticked, but it is not left off the table either. The
-    # columns line up with the table above: same widths, same mark/# slots left
-    # blank, same state colouring, just no blurb since there is no catalog entry
-    # to describe it.
-    local other; other="$(dc_other_running)"
+    # columns line up with the table above: same mark/# slots left blank, same
+    # state colouring, just no blurb since there is no catalog entry to describe
+    # it. The name column widens to fit whatever is actually running, rather
+    # than staying pinned at the catalog's 14 -- compose's "<project>-<service>-
+    # <n>" names routinely blow past that and drag state and ports out of line.
+    local other namew=14 n
+    other="$(dc_other_running)"
     if [ -n "$other" ]; then
+        while IFS=$'\t' read -r n _ _; do
+            [ -n "$n" ] && [ "${#n}" -gt "$namew" ] && namew="${#n}"
+        done <<< "$other"
         printf '\n  %s\n' "${C_DIM}also running, not managed here:${C_RESET}"
         printf '  %s\n' "$(printf '%.0s-' {1..72})"
         while IFS=$'\t' read -r name state ports; do
@@ -2547,7 +2553,7 @@ dc_print_catalog() {
                 *) pad="${C_DIM}${pad}${C_RESET}" ;;
             esac
             printf -v ppad '%-28s' "${ports:--}"
-            printf '  %-3s %-3s %-14s %b %s\n' '' '' "$name" "$pad" "${C_DIM}${ppad}${C_RESET}"
+            printf '  %-3s %-3s %-*s %b %s\n' '' '' "$namew" "$name" "$pad" "${C_DIM}${ppad}${C_RESET}"
         done <<< "$other"
     fi
     printf '\n'
